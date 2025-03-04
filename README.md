@@ -27,5 +27,6 @@ Since these projects nearly always contain a GAL or CPLD, the .pld files describ
 Software projects are written in 6502 assembly language and are assembled with the Mad-Assembler (MADS), https://mads.atari8.info/. I call MADS from the Windows command-line with mads <filename.asm> -l:<filename.lst> -o:<filename.bin>. This makes sure that you get a decent list-file and the .bin file that can be uploaded to the JC2 using the XMODEM protocol.
 
 - [Memory-test](./Software/memtest): The memory-test program scans the hardware present and detects if a MMU is present. It shows and tests all available RAM and ROM memory, displays the number of RAM-banks found and tests each one of them.
+- [Monitor](./Software/jc2_mon_1K): This is the original monitor program written by A. Nachtmann (1980), which was restored and adapted for TASM by A.J. Prosman (2019). I adapted the source for MADS (2024). Included here for reference.
 
 
