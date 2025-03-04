@@ -1,0 +1,173 @@
+/*---------------------------------------------------------------*/
+/* Compiler       : WinCUPL                                      */
+/* HW Version     : MMU ADD-ON PCB V0.2                          */
+/* Version history:                                              */
+/*            V020: - Positive logic for RAM_SEL, K2, K3 and K4. */
+/*                  - RB_EN (RAM-Bank enable) added.             */
+/*                  - This version is meant for JC2 v4.0 PCB.    */
+/*            V010: First dev. version, copy from jc2-mmu v0.40. */
+/*---------------------------------------------------------------*/
+Name     jc2_mmu_atf1504;
+PartNo   ATF1504_PLCC44 ;
+Date     10-02-2025 ;
+Revision 02 ;
+Designer Emile ;
+Company  - ;
+Assembly None ;
+Location IC2 ;
+Device   f1504ispplcc44 ;
+
+/* ---------------------------------------------------- */
+/* JTAG: TDI pin  7, TMS pin 13, TCK pin 32, TDO pin 38 */
+/* VCC :     pin  3,     pin 15,     pin 23,     pin 35 */
+/* GND :     pin 10,     pin 22,     pin 30,     pin 42 */
+/* ---------------------------------------------------- */
+
+/* ******************************* INPUT PINS ****************************************/
+PIN  43 = A15;                     /* A15 address line from CPU                      */ 
+PIN  44 = A14;                     /* A14 address line from CPU                      */ 
+PIN   1 = A13;                     /* A13 address line from CPU                      */ 
+PIN   2 = A12;                     /* A12 address line from CPU                      */ 
+PIN   4 = A11;                     /* A11 address line from CPU                      */ 
+PIN   5 = A10;                     /* A10 address line from CPU                      */ 
+PIN   6 = A9;                      /* A9  address line from CPU                      */ 
+PIN   8 = A8;                      /* A8  address line from CPU                      */ 
+PIN   9 = BIOS_EN;                 /* 1 = Enable BIOS at $E000, disable RAM          */ 
+PIN  11 = MON_EN;                  /* 1 = Enable Monitor at $1C00, disable RAM       */ 
+PIN  12 = PHI2;                    /* CPU 1 MHz clock PHI2                           */ 
+PIN  14 = RW;                      /* CPU R/!W signal                                */ 
+PIN  16 = RAMB4;                   /* RAM-Bank select bit 4                          */ 
+PIN  17 = RAMB3;                   /* RAM-Bank select bit 3                          */
+PIN  18 = RAMB2;                   /* RAM-Bank select bit 2                          */
+PIN  19 = RAMB1;                   /* RAM-Bank select bit 1                          */ 
+PIN  20 = RAMB0;                   /* RAM-Bank select bit 0                          */
+/* ******************************** OUTPUT PINS **************************************/
+PIN  21 = !RAM_WE;                 /* RAM Write-enable                               */ 
+PIN  24 =  RAM_SEL;                /* RAM Chip-enable, Q2: OC + invert               */ 
+PIN  25 = !PIA_CS;                 /* Chip-select for 6520 PIA on JC2 board          */ 
+PIN  26 = !ACIA_CS;                /* Chip-select for 6551 ACIA on JC2 board         */ 
+PIN  27 = !RIOT_CS;                /* Chip-select for 6532 RIOT on JC2 board         */ 
+PIN  28 = !ROM_SEL;                /* 0 = Enable ROM, !WE signal for eeprom          */ 
+PIN  29 =  MA18;                   /* A18 address line for RAM IC                    */
+PIN  31 = !MA17;                   /* A17 address line for RAM IC (= CS2 for 628128) */
+PIN  33 =  MA16;                   /* A16 address line for RAM IC                    */
+PIN  34 =  MA15;                   /* A15 address line for RAM IC                    */
+PIN  36 =  MA14;                   /* A14 address line for RAM IC                    */
+PIN  37 =  K2;                     /* K2 address line, $0800-$0BFF, U6B: OC & Invert */
+PIN  39 =  K3;                     /* K3 address line, $0C00-$0FFF, U6C: OC & Invert */
+PIN  40 =  K4;                     /* K4 address line, $1000-$13FF, U6D: OC & Invert */
+PIN  41 =  RB_EN;                  /* 1 = RAM-Banks enable, 0 = only normal 64K      */
+/* ***********************************************************************************/
+
+/*-----------------------------------------------------------------------------*/
+/* The AS6C4008 SRAM IC has 32 * 16K = 512K. The first 4 banks are for the JC2 */
+/* main-memory, the other 28 banks are RAM-banks and are mapped to $4000-$7FFF */
+/* of the main-memory.                                                         */
+/* The 64K base memory is divided in 4 banks (16 K each) called M0, M2, M3     */
+/* and R1 for the RAM bank area in $4000-$7FFF.                                */
+/* The other RAM-banks (28 * 16K) are called R4 - R31, 448 K total.            */
+/*                                                                             */
+/*                -------------- INPUTS ---------- | ---- OUTPUTS -----        */
+/*                RB_EN A15 A14  RAMB4..2 RAMB1..0 | MA18..16 MA15 MA14        */
+/*--------------------------------------------------------------------         */
+/* M0 $0000-$3FFF  X     0   0     XXX      XX     |   000      0    0   (64)  */
+/* M2 $8000-$BFFF  X     1   0     XXX      XX     |   000      1    0   (64)  */
+/* M3 $C000-$FFFF  X     1   1     XXX      XX     |   000      1    1   (64)  */
+/*                                                                             */
+/* R1 & !RB_EN     0     0   1     XXX      XX     |   000      0    1   (32)  */
+/*                                                                             */
+/* R1 $4000-$7FFF  1     0   1     000      XX     |   000      0    1    (4)  */
+/* R04..R07        1     0   1     001      ..     |   001   RAMB1 RAMB0  (4)  */
+/* R08..R11        1     0   1     010      ..     |   010   RAMB1 RAMB0  (4)  */
+/* R12..R15        1     0   1     011      ..     |   011   RAMB1 RAMB0  (4)  */
+/* R16..R19        1     0   1     100      ..     |   100   RAMB1 RAMB0  (4)  */
+/* R20..R23        1     0   1     101      ..     |   101   RAMB1 RAMB0  (4)  */
+/* R24..R27        1     0   1     110      ..     |   110   RAMB1 RAMB0  (4)  */
+/* R28..R31        1     0   1     111      ..     |   111   RAMB1 RAMB0  (4)  */
+/*-----------------------------------------------------------------------------*/
+MA18 =  RB_EN & !A15 & A14 & RAMB4;    	 	/* RAM-banks R16-R31           */
+
+MA17 =  RB_EN & !A15 & A14 & RAMB3;   	 	/* RAM-banks R8-R15, R24-R31   */
+
+MA16 =  RB_EN & !A15 & A14 & RAMB2;      	/* RAM-banks R4-R7, R12-R15, R20-R23, R28-R31 */
+
+MA15 =  RB_EN & !A15 & A14 & RAMB1             	/* RAM-banks in R4-R31 with RAMB1=1 */
+     #   A15;                           	/* Main-banks M2 & M3  */
+
+MA14 =  RB_EN & !A15 & A14 &  RAMB4 &  RAMB0   	      /* RAM-banks in R4-R31 with RAMB0=1 */
+     #  RB_EN & !A15 & A14 &  RAMB3 &  RAMB0   	      /* RAM-banks           */
+     #  RB_EN & !A15 & A14 &  RAMB2 &  RAMB0   	      /* RAM-banks           */
+     #  RB_EN & !A15 & A14 & !RAMB4 & !RAMB3 & !RAMB2 /* R1 $4000-$7FFF      */
+     # !RB_EN & !A15 & A14                            /* R1 & !RB_EN         */
+     #           A15 & A14;                           /* Main-bank M3        */
+
+/*-----------------------------------------------------------------------------*/
+/* The K2, K3 and K4 address lines were generated by U8 (74LS145), but are now */
+/* generated here. They are followed by a OC buffer to generate the OC signals */
+/* again. With this design, U8 can be removed from the new design.             */
+/*-----------------------------------------------------------------------------*/
+K4   = !A15 & !A14 & !A13 &  A12 & !A11 & !A10; /* $1000-$13FF */
+K3   = !A15 & !A14 & !A13 & !A12 &  A11 &  A10; /* $0C00-$0FFF */
+K2   = !A15 & !A14 & !A13 & !A12 &  A11 & !A10; /* $0800-$0BFF */
+
+/*-----------------------------------------------------------------------------*/
+/* The newly added PIA 6520 IC will use the previously unused address range    */
+/* $1700-$17FF, which is removed from the original !K5 signal. The 6520 PIA    */
+/* contains 3 chip-selects: CS0 (=A9), CS1 (=A8) and !CS2. The !CS2 is         */
+/* decoded here for an effective address range of $1700-$17FF.                 */
+/*-----------------------------------------------------------------------------*/
+PIA_CS = !A15 & !A14 & !A13 & A12 & !A11 & A10 & A9 & A8; /* $1700-$17FF */
+
+/*-----------------------------------------------------------------------------*/
+/* The original chip-select for the 6551 ACIA on the JC2 was the !K5 line      */
+/* with address-range from $1400-$17FF (1K). A9 was coupled to CS0, so that    */
+/* the effective ACIA address-range was $1600-$17FF. The area from $1400-$15FF */
+/* was added to RAM with U5D/U5E/U6C. This is no longer needed when A8 is      */
+/* added to the ACIA chip-select line.                                         */
+/* The ACIA address range now becomes $1600-$16FF (256 B).                     */
+/*                                                                             */
+/* NOTE: the unused address range $1700-$17FF is now meant for the 6520 PIA.   */
+/*-----------------------------------------------------------------------------*/
+ACIA_CS = !A15 & !A14 & !A13 & A12 & !A11 & A10 & A9 & !A8; /* $1600-$16FF */
+
+/*-----------------------------------------------------------------------------*/
+/* The original chip-select for the 6532 RIOT on the JC2 was the !K6 line with */
+/* an address-range of $1800-$1BFF (1K). A9 was coupled to CS1 and A7 to !RS,  */
+/* so the effective RIOT address-range was from $1A00-$1BFF. The area from     */
+/* $1800-$19FF was not used. The RIOT registers were available from $1A80 and  */
+/* the RIOT 128B RAM was available from $1A00. Now, A8 is added to the RIOT    */
+/* address range, so that this new RIOT address range becomes $1A00-$1AFF.     */
+/*-----------------------------------------------------------------------------*/
+RIOT_CS = !A15 & !A14 & !A13 & A12 & A11 & !A10 & A9 & !A8; /* $1A00-$1AFF */
+
+/*-----------------------------------------------------------------------------*/
+/* The RAM_CE output enables the RAM IC whenever there is RAM to be addressed. */
+/* This is done for both read- and write actions.                              */
+/* The RAM_WE output enables the RAM IC for write operations.                  */
+/* Since U7 is still present, the BANK80_SEL, BANKA0_SEL & BANKC0_SEL  signals */
+/* are generated and coupled to the RAM_CE line with the dip-switches, so      */
+/* there's no need to generate them here.                                      */
+/* U7 used to also handle the RAM area from $2000-$3FFF.                       */
+/* U8 also handles RAM area from $0000-$07FF.                                  */  
+/*-----------------------------------------------------------------------------*/
+RAM_SEL = PHI2 &  A15 &  A14 &  A13 & !BIOS_EN                                /* $E000-$FFFF 8K BIOS-area ROM -> RAM   */
+        # PHI2 & !A15 &  A14                                                  /* $4000-$7FFF 16K RAM-bank area         */
+	# PHI2 & !A15 & !A14 &  A13                                           /* $2000-$3FFF 8K RAM area (from U7)     */ 
+        # PHI2 & !A15 & !A14 & !A13 &  A12 &  A11 & A10 & !A9 & !A8 & !MON_EN /* $1C00-$1FFF 1K Monitor ROM -> RAM     */
+        # PHI2 & !A15 & !A14 & !A13 &  A12 &  A11 & !A10 & A9 & A8            /* $1B00-$1BFF 256B RIOT shadow, now RAM */
+        # PHI2 & !A15 & !A14 & !A13 &  A12 &  A11 & !A10 & !A9                /* $1800-$19FF 512B unused, now RAM      */
+        # PHI2 & !A15 & !A14 & !A13 &  A12 & !A11 &  A10 & !A9                /* $1400-$15FF 512B (from U5D,U5E & U6C) */
+	# PHI2 & !A15 & !A14 & !A13 & !A12 & !A11;                            /* $0000-$07FF 2K RAM area (from U8)     */ 
+
+RAM_WE  = PHI2 & !RW; /* only enable RAM during write when clock is high */
+
+/*-----------------------------------------------------------------------------*/
+/* The ROM_SEL output switches both the Monitor ROM at $1C00-$1FFF and the     */
+/* BIOS ROM at $E000-$FFFF. These ROMs can now be switched out and replaced    */
+/* by RAM. In order to prevent system-crashes a special driver is needed,      */
+/* e.g. a copy ROM-to-RAM routine.                                             */
+/*-----------------------------------------------------------------------------*/
+ROM_SEL =  A15 &  A14 &  A13 & BIOS_EN                   /* $E000-$FFFF BIOS ROM */
+        # !A15 & !A14 & !A13 & A12 & A11 & A10 & MON_EN; /* $1C00-$1FFF MON ROM  */
+
+
