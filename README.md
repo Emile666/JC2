@@ -16,8 +16,11 @@ This page serves as a placeholder for all hardware and software projects that I 
 
 Hardware projects are (mostly) created with KiCad 8 and I publish both the KiCad project-files as the Gerber files. The Gerber files can be sent directly to a PCB manufacturer.
 
-- [Memory-card](./Hardware/memtest): I created a 512K add-on board for the JC2 which contains a ATF1504 plcc44 GAL. It contains a memory management unit (MMU) register that can switch Monitor ROM, BIOS ROM and the different RAM-banks (28 banks of 16K each).
-- Backplane: I created an update of Joerg original backplane and added a flat-cable connector to it, so that you can have multiple backplanes connected together.
+Since these projects nearly always contain a GAL or CPLD, the .pld files describing the programmable logic is also included. I typically use an ATF16V8, an ATF22V10 or an ATF1504 (plcc44 and plcc84). They are programmed with WinCUPL and the .pld file can be loaded directly into WinCUPL. The resulting .jed file is either programmed into the GAL / CPLD directly with the Afterburner programmer (ATF16V8 and ATF22V10), or further processed by ATMISP (to create a .svf file from the .jed file) and svf2xsvf502 (to create a .xsvf file from the .svf file) and then programmed by the Afterburner programmer into the device (ATF1504).
+
+- [RAM-bank add-on](./Hardware/rambank): I created a 512K add-on board for the JC2 which contains a AS6C4008 512Kx8 SRAM and a ATF1504 plcc44 GAL. It contains a memory management unit (MMU) register that can switch Monitor ROM, BIOS ROM and the different RAM-banks (28 banks of 16K each). Current version is made with Eagle, never revisions are planned to be made with KiCad.
+- [Compact-Flash IDE interface](./Hardware/cf_ide): The idea originated from the Atari XL CF-IDE interface. I changed it for the JC2. Most of the TTL ICs were removed and put into a GAL (an ATF16V8).
+- [Backplane](./Hardware/backplane/): I created an update of Joerg original backplane and added a flat-cable connector to it, so that you can have multiple backplanes connected together.
 
 # Software projects
 
