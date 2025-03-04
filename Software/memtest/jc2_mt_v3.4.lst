@@ -1,0 +1,993 @@
+mads 2.1.7 build 33 (1 Aug 24)
+Source: jc2_mt_v3.4.asm
+     1 				;---------------------------------------------------------------------------
+     2 				; Memory-Test for Junior Computer ][
+     3 				; v1: first version of mem-Test
+     4 				; v2: table-driven version of mem-Test
+     5 				; v3: PIA-detection + RAM-Banks test added
+     6 				; v3.1: 628128 RAM IC test + Printing subroutines added
+     7 				; v3.2: BASIC-ROM test added + IOL-card detection
+     8 				; v3.3: MMU-banks detection improved
+     9 				; v3.4: ATF1504 MMU detection added
+    10 				;---------------------------------------------------------------------------
+    11 				        OPT h- ; do not add file header
+    12 				        OPT f+ ; save as single block
+    13
+    14 				; Defines and Constants ********************************************************
+    15 = 000D			CR        	EQU     $0D    		; carriage return
+    16 = 000A			LF	  	EQU     $0A    		; line feed
+    17
+    18 = 0001			BIOS_EN		EQU	$01		; PORTB bit 0: 1 = enable BIOS at $E000
+    19 = 0002			MON_EN		EQU	$02		; PORTB bit 1: 1 = enable Monitor at $1C00
+    20
+    21 				; Defines for RAM-table
+    22 = 0000			TNO		EQU	$00		; No test
+    23 = 0001			TRAM		EQU     $01		; RAM test only
+    24 = 0002			TROM		EQU	$02		; ROM test and RAM test behind ROM
+    25 = 0003			TPIA		EQU	$03		; 6520 PIA test
+    26 = 0080			TRIOT		EQU	$80		; 6532 RIOT 128 B RAM test 
+    27
+    28 = 0003			NO_RAMBANK	EQU	$03		; No RAM-banks selected, both ROMs enabled
+    29
+    30 = 0E65			ROM_CS_MON	EQU     $0E65		; Checksum JC Monitor program (1K)
+    31 = 65C3			ROM_CS_BIOS	EQU	$65C3		; Checksum BIOS v1.1.4 (8K)
+    32 = 804C			ROM_CS_BASIC	EQU	$804C		; Checksum BASIC ROM v2.25 (12K)
+    33
+    34 = 0014			IOBASE		EQU	$14		; LSB of IO/ROM card if found (0 if not present)
+    35 = 0015			IOBASEH		EQU	$15		; MSB of IO/ROM card if found (0 if not present)
+    36
+    37 = 00C7			PIA_PRESENT	EQU	$C7		; 1-byte, 0=no PIA, $80=PIA present
+    38 = 00C8			BCNTR		EQU     $C8		; 1-byte RAM-bank counter
+    39 = 00C9			MMU_BANKS	EQU     $C9		; 1-byte, #RAM-banks found, 0 = no RAM-banks found
+    40 = 00CB			KB		EQU	$CB		; 1-byte Size in KB
+    41 = 00CC			ROM_PTR		EQU	$CC		; 2-byte ROM pointer
+    42 = 00CE			ROM_CS 		EQU 	$CE		; 2-byte ROM checksum
+    43 = 00D0			SAVEX		EQU	$D0		; X-register back-up
+    44 = 00D1			SAVEY		EQU	$D1		; Y-register back-up
+    45 = 00D2			PPSTR		EQU	$D2		; 2-byte Post Print pointer
+    46 = 00D4			PRBMSB          EQU     $D4		; MSB of begin-address to print
+    47 = 00D5			PREMSB          EQU     $D5		; MSB of end-address to print
+    48 = 00D6			CHK_MODE        EQU     $D6             ; 0=no RAM-check, 1=RAM-check 2=ROM checksum,
+    49 				                                        ; 80=start halfway a memory page
+    50 = 00D7			TBL_IDX		EQU     $D7		; 1-byte index in memory table
+    51 = 00D8			PGCNTR		EQU     $D8		; 2-byte Memory end address
+    52 = 00DA			RAMSAV1         EQU     $DA             ; 1-byte memory save
+    53 = 00DB			RAMSAV2         EQU     $DB             ; 1-byte memory save
+    54
+    55 = 00EA			PSTR      	EQU   	$EA      	; 2-byte BIOS output string Pointer
+    56
+    57 = 00F8			DIG0      	EQU   	$F8     	; 10^0 digit
+    58 = 00F9			DIG1	  	EQU   	$F9	 	; 10^1 digit
+    59 = 00FA			DIG2      	EQU   	$FA     	; 10^2 digit
+    60
+    61 = 1602			COMM_REG  	EQU   	$1602    	; ACIA Command Register
+    62
+    63 = 1700			PORTA		EQU	$1700		; CRA-2=1: PIA PORTA register
+    64 = 1700			DDRA            EQU     $1700           ; CRA-2=0: PIA data-direction A register 
+    65 = 1701			CRA             EQU     $1701           ; PIA control A register
+    66 = 1702			PORTB		EQU	$1702		; CRB-2=1: PIA PORTB register
+    67 = 1702			DDRB            EQU     $1702           ; CRB-2=0: PIA data-direction B register 
+    68 = 1703			CRB             EQU     $1703           ; PIA control B register
+    69
+    70 				; BIOS v1.1.4 Routines *********************************************************
+    71
+    72 = E083			STROUT		EQU     $E083           ; string write routine v1.1.4 bios
+    73 = E091			HEXOUT          EQU     $E091           ; print 2-byte hex number
+    74 = E0A7			NUMOUT          EQU     $E0A7           ; print 3-byte decimal number
+    75 = E0BD			DEC2STR		EQU	$E0BD		; convert decimal number to string
+    76 = E044			BOUT		EQU     $E044           ; print 1 byte
+    77 = E052			COUT		EQU     $E052           ; print 1 character
+    78 = E003			MON_WARM_START	EQU  	$E003       	; BIOS monitor warm start
+    79 = ECD1			DETECT_IOL_CARD EQU	$ECD1		; Detect IO / Basic card
+    80
+    81  00 20					.word RUN_ADR		; Needed for lm command (XMODEM load program)
+    82
+    83 						ORG $2000
+    84 					
+    85 				;----------------------------------------------------------------------------
+    86 				; This is the main program for the JC2 Memory Tester.
+    87 				;----------------------------------------------------------------------------
+    88 2000 20 3F 23		RUN_ADR 	JSR PR_TITLE        	; Print Program Title text
+    89 2003 A9 00				LDA #$00            	; Init. table index
+    90 2005 85 D7		                STA TBL_IDX
+    91 2007 85 C7				STA PIA_PRESENT		; 0 = No PIA
+    92 2009 85 C9				STA MMU_BANKS		; Init. nr. of RAM-banks found
+    93 						
+    94 200B 20 D1 EC				JSR DETECT_IOL_CARD	; Check if IO-Basic ROM card is present
+    95 200E 20 1D 24				JSR PR_IOL_CARD		; Print status of IOL-card
+    96 2011 20 AB 21				JSR PIA_DETECT	    	; check if PIA or ATF1504 MMU is present
+    97 2014 B0 03				BCS CHECK_BASIC	    	; branch if no PIA or MMU is present
+    98 						
+    99 						; A 6520 PIA or MMU is present, check number of RAM-banks
+   100 2016 20 03 22				JSR RAM_BANKS_DET   	; Get #RAM-banks present
+   101
+   102 2019 A5 15		CHECK_BASIC	LDA IOBASEH		; 0=not present
+   103 201B F0 03				BEQ MAIN_LOOP		; branch if no IO-card detected
+   104 						
+   105 201D 20 11 24				JSR COPY_B0_C0		; update RAM-table with BASIC ROM info
+   106 						
+   107 				;----------------------------------------------------------------------------
+   108 				; This is the main loop of the memory-test program, 
+   109 				; it tests all memory-areas defined in RAM_TABLE.
+   110 				;----------------------------------------------------------------------------
+   111 2020 20 34 21		MAIN_LOOP	JSR READ_TABLE	    	; Read values from memory-table
+   112 2023 B0 43				BCS MAIN_EXIT	    	; branch if all entries are Read
+   113 						
+   114 2025 20 6A 23				JSR PR_INFO	    	; Print line of text to screen
+   115 2028 A5 D6				LDA CHK_MODE	    	; check mode
+   116 202A C9 01				CMP #TRAM              	; Test RAM
+   117 202C D0 06				BNE MLP1	    	; branch if no RAM-Test
+   118
+   119 						; Option 1: Check RAM
+   120 202E 20 72 20				JSR CHK_RAM_MAIN	; Now check memory for this entry
+   121 2031 4C 64 20				JMP MCONT	    	; branch always
+   122 					
+   123 2034 C9 02		MLP1		CMP #TROM	    	; Test ROM
+   124 2036 D0 25				BNE MLP4	    	; branch if no ROM-Test
+   125
+   126 						; Option 2: Check ROM and RAM behind it
+   127 2038 20 81 20				JSR CHK_ROM_MAIN	; Test ROM
+   128 203B A0 00				LDY #0			; init page index
+   129 203D A5 D9				LDA PGCNTR+1		; get original page-counter
+   130 203F C9 1C				CMP #$1C		; $1C00-$1FFF, Monitor ROM
+   131 2041 D0 06				BNE MLP2
+   132 						
+   133 2043 20 B3 22				JSR MON_RAM_TEST	; test RAM behind monitor ROM
+   134 2046 4C 64 20				JMP MCONT		; branch always
+   135 						
+   136 2049 C9 E0		MLP2		CMP #$E0		; $E000-$FFFF, BIOS ROM
+   137 204B D0 06				BNE MLP3		
+   138 						
+   139 204D 20 E5 22				JSR BIOS_RAM_TEST	; test RAM behind BIOS ROM
+   140 2050 4C 64 20				JMP MCONT
+   141 						
+   142 2053 C9 B0		MLP3		CMP #$B0		; test RAM behind BASIC ROM
+   143 2055 D0 06				BNE MLP4
+   144 						
+   145 2057 20 17 23				JSR BASIC_RAM_TEST	; Test RAM
+   146 205A 4C 64 20				JMP MCONT		; branch always
+   147
+   148 205D C9 03		MLP4		CMP #TPIA		; 6520 PIA?
+   149 205F D0 03				BNE MCONT		; branch if not PIA entry
+   150
+   151 2061 20 4A 24				JSR PR_PIA_RESULT	; Print PIA result
+   152 						;JMP MCONT
+   153 						
+   154 2064 E6 D7		MCONT		INC TBL_IDX	    	; next entry
+   155 2066 D0 B8				BNE MAIN_LOOP	    	; branch always
+   156
+   157 2068 A5 C9		MAIN_EXIT	LDA MMU_BANKS		; Nr. of RAM-banks found
+   158 206A F0 03				BEQ EXIT_MON	    	; branch if no RAM-banks to Test
+   159 						
+   160 206C 20 60 22				JSR RAM_BANKS_TEST  	; test all memory in RAM-banks
+   161 206F 4C 03 E0		EXIT_MON	JMP MON_WARM_START  	; exit program, jump to JC monitor again
+   162
+   163 				;----------------------------------------------------------------------------
+   164 				; This routine is the entry-point for the check RAM function.
+   165 				;----------------------------------------------------------------------------
+   166 2072 20 94 20		CHK_RAM_MAIN	JSR CHECK_RAM	    	; Now check memory for this entry
+   167 2075 B0 03				BCS MAERR	    	; branch if error
+   168 						
+   169 2077 4C C2 23				JMP PR_RAM_OK	    	; Print RAM OK message and return
+   170 					
+   171 207A A9 CE		MAERR	    	LDA #<TXT_RAM_NOK   	; Print RAM error
+   172 207C A0 25				LDY #>TXT_RAM_NOK
+   173 207E 4C 0A 24				JMP SPRINT          	; print and return
+   174 						
+   175 				;----------------------------------------------------------------------------
+   176 				; This routine is the entry-point for the check ROM function.
+   177 				;----------------------------------------------------------------------------
+   178 2081 A0 30		CHK_ROM_MAIN	LDY #$30		; IOBASE+$30 selects BASIC ROM
+   179 2083 B1 14				LDA (IOBASE),Y		; Switch to BASIC ROM area
+   180 						
+   181 2085 20 DE 20				JSR CHECK_ROM	    	; Now check memory for this entry
+   182 2088 B0 07				BCS MOERR	    	; branch if error
+   183 						
+   184 208A A9 E8				LDA #<TXT_ROM_OK    	; Print ROM OK message
+   185 208C A0 25				LDY #>TXT_ROM_OK
+   186 208E 4C 0A 24				JMP SPRINT          	; print and return
+   187 					
+   188 2091 4C F4 23		MOERR	    	JMP PR_ROM_ERR         	; print and return
+   189 						
+   190 				;----------------------------------------------------------------------------
+   191 				; This routine checks a RAM area for errors.
+   192 				; PGCNTR should be set to the RAM begin-address to check.
+   193 				; X-register: Number of pages - 1 (1 page = 256 B) to check: 3 = 1K block.
+   194 				; Y-register: Number of bytes to check (0 = 256 bytes) on the first page.
+   195 				; Returns   : C=0: RAM-check ok
+   196 				;             C=1: RAM error
+   197 				;----------------------------------------------------------------------------
+   198 2094 A6 D0		CHECK_RAM	LDX SAVEX
+   199 2096 CA					DEX		    	; X = 3 => 4 pages to check
+   200 2097 A4 D1				LDY SAVEY
+   201 2099 B1 D8		CHECK_RAM_LP	LDA (PGCNTR),Y
+   202 209B 85 DA				STA RAMSAV1         	; save value
+   203 209D A9 55				LDA #$55            	; 0101 0101
+   204 209F 91 D8				STA (PGCNTR),Y
+   205 20A1 C8					INY
+   206 20A2 B1 D8				LDA (PGCNTR),Y
+   207 20A4 85 DB				STA RAMSAV2	    	; save value
+   208 20A6 A9 AA				LDA #$AA	    	; 1010 1010
+   209 20A8 91 D8				STA (PGCNTR),Y
+   210 20AA 88					DEY		    	; Go back to previous RAM byte
+   211 20AB B1 D8				LDA (PGCNTR),Y
+   212 20AD C9 55				CMP #$55
+   213 20AF D0 1B				BNE RAM_ERR	    	; branch on RAM error
+   214 						
+   215 20B1 A5 DA				LDA RAMSAV1
+   216 20B3 91 D8				STA (PGCNTR),Y      	; restore original value
+   217 20B5 C8					INY
+   218 20B6 B1 D8				LDA (PGCNTR),Y
+   219 20B8 C9 AA				CMP #$AA
+   220 20BA D0 10				BNE RAM_ERR	    	; branch on RAM error
+   221 						
+   222 20BC A5 DB				LDA RAMSAV2
+   223 20BE 91 D8				STA (PGCNTR),Y      	; restore original value
+   224 						
+   225 20C0 C8					INY		    	; next 2 bytes
+   226 20C1 D0 D6				BNE CHECK_RAM_LP	; continue checking this page
+   227 						
+   228 						; 1 page done, no errors
+   229 20C3 84 D8				STY PGCNTR          	; in case PGCNTR started halfway a page
+   230 20C5 E6 D9				INC PGCNTR+1	    	; Next page
+   231 20C7 CA					DEX		    	; number of pages to check - 1
+   232 20C8 10 CF				BPL CHECK_RAM_LP      	; new page, continue checking
+   233 						
+   234 						; Entire RAM-area checked, no errors
+   235 20CA 18					CLC		    	; C=0, no error
+   236 20CB 60					RTS
+   237 						
+   238 20CC 98			RAM_ERR		TYA	
+   239 20CD 85 D1				STA SAVEY		; save Y-value
+   240 20CF 29 01				AND #$01	    	; Odd or Even?
+   241 20D1 A8					TAY		    	; Y=0 (RAMSAV1) or 1 (RAMSAV2)
+   242 20D2 B9 DA 00				LDA RAMSAV1,Y       	; restore value of memory byte
+   243 20D5 48					PHA			; save restored value
+   244 20D6 A5 D1				LDA SAVEY		; 
+   245 20D8 A8					TAY			; get original Y value back
+   246 20D9 68					PLA			; get restored value back again
+   247 20DA 91 D8		                STA (PGCNTR),Y      	; not really need in case of error, just to be sure
+   248 20DC 38					SEC		    	; C=1, error!
+   249 20DD 60					RTS
+   250
+   251 				;----------------------------------------------------------------------------
+   252 				; This routine calculates the checksum of the ROM area starting in PRBMSB and
+   253 				; ends in PREMSB. The result is stored in ROM_CS.
+   254 				;----------------------------------------------------------------------------
+   255 20DE A6 D0		CHECK_ROM    	LDX SAVEX
+   256 20E0 CA					DEX		    	; X = 3 => 4 pages to check
+   257 20E1 A0 00				LDY #0   		
+   258 20E3 84 CE				STY ROM_CS
+   259 20E5 84 CF				STY ROM_CS+1
+   260 20E7 84 CC				STY ROM_PTR
+   261 20E9 A5 D4				LDA PRBMSB	    	; MSB of ROM begin-addres to check
+   262 20EB 85 CD				STA ROM_PTR+1
+   263 20ED B1 CC		ROM_LP1		LDA (ROM_PTR),Y	    	; get byte from ROM
+   264 20EF 18					CLC
+   265 20F0 65 CE				ADC ROM_CS	    	; add to LSB checksum
+   266 20F2 85 CE				STA ROM_CS
+   267 20F4 90 02				BCC ROM_LP2
+   268 						
+   269 20F6 E6 CF				INC ROM_CS+1        	; increment MSB
+   270 20F8 C8			ROM_LP2		INY
+   271 20F9 D0 F2				BNE ROM_LP1
+   272
+   273 20FB E6 CD				INC ROM_PTR+1	    	; next ROM page
+   274 20FD CA					DEX
+   275 20FE 10 ED				BPL ROM_LP1         	; branch if not done yet
+   276
+   277 2100 A5 CD				LDA ROM_PTR+1
+   278 2102 F0 20				BEQ ROM_BIOS_CHK	; BIOS end-address = $FFFF + 1
+   279 						
+   280 2104 C9 20				CMP #$20	    	; end address JC Monitor program
+   281 2106 D0 0E				BNE ROM_BASIC_CHK	; branch if not Monitor ROM
+   282 						
+   283 						; Compare checksum with JC Monitor ROM checksum
+   284 2108 A5 CE		ROM_MON_CHK	LDA ROM_CS
+   285 210A C9 65				CMP #<ROM_CS_MON
+   286 210C D0 24				BNE ROM_ERR	    	; branch on error
+   287 						
+   288 210E A5 CF				LDA ROM_CS+1
+   289 2110 C9 0E				CMP #>ROM_CS_MON
+   290 2112 D0 1E				BNE ROM_ERR	    	; branch on error
+   291 2114 F0 1A				BEQ ROM_NOERR	    	; branch always
+   292
+   293 						; Compare checksum with BASIC ROM checksum
+   294 2116 A5 CE		ROM_BASIC_CHK	LDA ROM_CS
+   295 2118 C9 4C				CMP #<ROM_CS_BASIC
+   296 211A D0 16				BNE ROM_ERR		; branch on error
+   297 						
+   298 211C A5 CF				LDA ROM_CS+1
+   299 211E C9 80				CMP #>ROM_CS_BASIC
+   300 2120 D0 10				BNE ROM_ERR		; branch on error
+   301 2122 F0 0C				BEQ ROM_NOERR		; branch always
+   302 						
+   303 						; Compare checksum with JC2 BIOS ROM checksum
+   304 2124 A5 CE		ROM_BIOS_CHK	LDA ROM_CS
+   305 2126 C9 C3				CMP #<ROM_CS_BIOS
+   306 2128 D0 08				BNE ROM_ERR	    	; branch on error
+   307 						
+   308 212A A5 CF				LDA ROM_CS+1
+   309 212C C9 65				CMP #>ROM_CS_BIOS
+   310 212E D0 02				BNE ROM_ERR	    	; branch on error
+   311
+   312 2130 18			ROM_NOERR	CLC		    	; ROM checksum OK
+   313 2131 60					RTS		    	; return
+   314
+   315 2132 38			ROM_ERR		SEC		    	; ROM checksum error
+   316 2133 60					RTS		    	; return
+   317
+   318 				;----------------------------------------------------------------------------
+   319 				; This routine reads an entry from the memory-table.
+   320 				; TBL_IDX is the index number and should be set to the RAM begin-address 
+   321 				; to check. This routine updates the following:
+   322 				; PGCNTR    : MSB is set to the begin-area in RAM to check
+   323 				; CHK_MODE  : The mode selected (NO, RAM or ROM check)
+   324 				; X-register: is set to the number of pages (256 B) to check
+   325 				; Y-register: is set to the number of bytes to check on the 1st page (0 = all)
+   326 				; Returns   : C=0: ok, C=1: TBL_IDX = TBL_MAX
+   327 				;----------------------------------------------------------------------------
+   328 2134 A9 00		READ_TABLE	LDA #0
+   329 2136 85 D1				STA SAVEY           	; 0 = default value (full page)
+   330 2138 85 D8				STA PGCNTR		; Init. page-counter to full page
+   331 213A A6 D7				LDX TBL_IDX         	; get current index
+   332 213C E0 11				CPX #TBL_MAX	    	; max. entries in memory table
+   333 213E 90 01				BCC TBL1	    	; branch if TBL_IDX < TBL1
+   334 							
+   335 2140 60					RTS		    	; error (C=1), return
+   336 						
+   337 2141 E0 00		TBL1		CPX #0
+   338 2143 F0 07				BEQ TBL2	    	; X=0? then exit multiply loop
+   339 						
+   340 2145 18			TBL1A		CLC
+   341 2146 69 05				ADC #TBL1_SZ	    	;
+   342 2148 CA					DEX
+   343 2149 D0 FA				BNE TBL1A           	; branch always
+   344
+   345 214B AA			 		TAX		    	; X = TBL1_SZ * TBL_IDX
+   346
+   347 214C BD 91 24		TBL2		LDA RAM_TABLE,X	    	; RAM_TABLE[TBL_IDX].mode
+   348 214F C9 80				CMP #TRIOT	    	; half a page to check?
+   349 2151 D0 04				BNE TBL_FP         	; branch if not $80
+   350 						
+   351 2153 85 D1				STA SAVEY	    	; Y = $80 (half page)
+   352 2155 A9 01				LDA #TRAM	    	; 1 = normal RAM-check
+   353 						
+   354 2157 85 D6		TBL_FP		STA CHK_MODE	    
+   355 2159 E8					INX		    	; next entry in table (print begin-address)
+   356 215A BD 91 24				LDA RAM_TABLE,X	    	; print begin-address MSB
+   357 215D 85 D4				STA PRBMSB
+   358 215F E8					INX		    	; next entry in table (RAM check begin-address)
+   359 2160 BD 91 24				LDA RAM_TABLE,X	    	; RAM-check begin-address MSB
+   360 2163 85 D9				STA PGCNTR+1        	; begin-address MSB for RAM-check
+   361 2165 E8					INX		    	; next entry in table (pointer to print text)
+   362 2166 BD 91 24				LDA RAM_TABLE,X	    	; pointer to print-text LSB
+   363 2169 85 D2				STA PPSTR	    	; init. screen pointer LSB
+   364 216B E8					INX 
+   365 216C BD 91 24				LDA RAM_TABLE,X	    	; pointer to print-text MSB
+   366 216F 85 D3				STA PPSTR+1         	; pointer to print-text MSB
+   367 						
+   368 2171 A5 D7				LDA TBL_IDX
+   369 2173 C9 10				CMP #TBL_MAX-1
+   370 2175 D0 0E				BNE TBL_NEND	    	; branch if not the last entry in the table
+   371 						
+   372 						;-------------------------------------------------------------
+   373 						; This is the last entry in the memory table.
+   374 						; Set Print end-address to $FF and number of
+   375 						; pages to check to one-complement of PGCNTR+1
+   376 						;-------------------------------------------------------------
+   377 2177 A9 FF				LDA #$FF
+   378 2179 85 D5				STA PREMSB	    	; Print end-address
+   379 217B A5 D9				LDA PGCNTR+1	    	; MSB begin-address for RAM-check
+   380 217D 49 FF				EOR #$FF	    	; one-complement
+   381 217F 18					CLC
+   382 2180 69 01				ADC #1		    	; two-complement
+   383 2182 AA					TAX	 	    	; X = #pages till $FFFF
+   384 2183 D0 22				BNE TBL_EXIT	    	; branch always
+   385
+   386 						;-------------------------------------------------------------
+   387 						; This is NOT the last entry in the memory table.
+   388 						; Set Print end-address to begin-address of next entry - 1 
+   389 						; and number of pages to begin-address next entry - begin-address
+   390 						; for RAM-check in the current entry.
+   391 						;-------------------------------------------------------------
+   392 2185 E8			TBL_NEND	INX		    	; now at mode next entry in memory-table
+   393 2186 E8					INX		    	; now at MSB of print begin-address next entry
+   394 2187 BD 91 24				LDA RAM_TABLE,X	    	; also the MSB end-address of the current entry
+   395 218A 85 D5				STA PREMSB	    	; save print end-address
+   396 218C 48					PHA                 	; save A
+   397 218D 38					SEC
+   398 218E E5 D4				SBC PRBMSB	    	; size in KB
+   399 2190 85 CB				STA KB              	; save size
+   400 2192 C6 D5				DEC PREMSB	    	; end-address = next begin-address - 1
+   401 2194 68					PLA                 	; get value back
+   402 2195 38					SEC
+   403 2196 E5 D9				SBC PGCNTR+1
+   404 2198 AA					TAX 		    	; X = #pages to check
+   405 						
+   406 						; Now check for 6532 128 bytes only RAM-check
+   407 2199 A4 D1				LDY SAVEY	    	; this is 0 (full-page) or $80 (6532 half-page)
+   408 219B C0 80				CPY #TRIOT
+   409 219D D0 08				BNE TBL_EXIT	    	; branch if normal area
+   410 						
+   411 219F A2 01				LDX #1		    	; 1 (half) page to check
+   412 21A1 C6 D9				DEC PGCNTR+1	    	; PGCNTR -= 128
+   413 21A3 84 D8				STY PGCNTR	    	; 
+   414 21A5 84 CB				STY KB              	; 128 B size
+   415 						
+   416 21A7 86 D0		TBL_EXIT	STX SAVEX	    	; save X-register
+   417 21A9 18					CLC		    	; C=0, no errors
+   418 21AA 60					RTS		    	; and return
+   419 						
+   420 				;----------------------------------------------------------------------------
+   421 				; This routine checks if the 6520 PIA from the MMU is present.
+   422 				;----------------------------------------------------------------------------
+   423 21AB AD 02 16		PIA_DETECT	LDA COMM_REG       	; ACIA command register at $1602
+   424 21AE 48					PHA		   	; save value
+   425 21AF 49 FF				EOR #$FF 	   	; invert all bits
+   426 21B1 8D 02 17				STA DDRB	   	; PIA DDRB register at $1702 or MMU-register
+   427 21B4 CD 02 16				CMP COMM_REG	   	; If ACIA and (PIA or MMU) are present, value is different 
+   428 21B7 D0 06				BNE PIA_DET2	   	; branch if PIA or MMU are present
+   429 						
+   430 						; no PIA or MMU present
+   431 21B9 68					PLA		   	; restore value
+   432 21BA 8D 02 16				STA COMM_REG	   	;
+   433 21BD 38			NO_PIA_DET	SEC		   	; C=1, error, no PIA
+   434 21BE 60					RTS
+   435 						
+   436 21BF 68			PIA_DET2	PLA		   	; restore previous value
+   437 21C0 8D 02 16				STA COMM_REG	   	;
+   438 						
+   439 						; Area at $1700-$17FF either contains nothing, a PIA or the MMU-register
+   440 21C3 20 E8 21				JSR PIA_INIT		; Init. the 6520 PIA output ports
+   441 21C6 AD 02 17				LDA PORTB		; PIA PORTB or MMU-register
+   442 21C9 C9 03				CMP #NO_RAMBANK		; PORTB init. value
+   443 21CB D0 F0				BNE NO_PIA_DET		; if not, no PIA or MMU-register present
+   444
+   445 						; CRB bit 2 = 1 => PIA present
+   446 						; CRB bit 2 = 0 => MMU-register present
+   447 21CD AD 03 17				LDA CRB			; PIA CRB register (or MMU-register)
+   448 21D0 09 04				ORA #4			; test bit 2
+   449 21D2 F0 04				BEQ MMU_REG		; branch if no PIA present
+   450 						
+   451 21D4 A9 80				LDA #$80		; $80 = PIA present
+   452 21D6 D0 0C				BNE PIA_DET_END		; branch always
+   453
+   454 21D8 A9 5A		MMU_REG		LDA #<TXT_MMU		; MMU text instead of PIA text
+   455 21DA 8D B2 24				STA TBL_PIA_TXT		; LSB of text-pointer
+   456 21DD A9 25				LDA #>TXT_MMU		;
+   457 21DF 8D B3 24				STA TBL_PIA_TXT+1	; MSB of text-pointer
+   458 21E2 A9 C0				LDA #$C0		; $C0 = MMU register (ATF1504) present
+   459 						
+   460 21E4 85 C7		PIA_DET_END	STA PIA_PRESENT		; $80 = PIA present, $C0 = ATF1504 MMU present
+   461 21E6 18					CLC		   	; C=0, PIA or MMU is present
+   462 21E7 60					RTS
+   463
+   464 				;----------------------------------------------------------------------------
+   465 				; This routine initializes the 6520 PIA.
+   466 				;----------------------------------------------------------------------------
+   467 21E8 AD 03 17		PIA_INIT	LDA CRB            	; PIA control register B
+   468 21EB 29 FB				AND #$FB	   	; CRB-2=0: select DDRB (MMU: MA14=0)
+   469 21ED 8D 03 17				STA CRB
+   470 21F0 A9 7F				LDA #$7F           	; PB6..PB0 are all output (MMU: MA17..14=1)
+   471 21F2 8D 02 17				STA DDRB
+   472 21F5 AD 03 17				LDA CRB
+   473 21F8 09 04				ORA #$04	   	; CRB-2=1: select PORTB (MMU: MA14=1)
+   474 21FA 8D 03 17				STA CRB
+   475 21FD A9 03				LDA #NO_RAMBANK	   	; BIOS and Monitor ROM are enabled
+   476 21FF 8D 02 17				STA PORTB	   	; Start with RAM-bank R1 in main-64K
+   477 2202 60					RTS			; and return
+   478 						
+   479 				;----------------------------------------------------------------------------
+   480 				; This routine checks how many RAM-banks are present. The result is
+   481 				; stored in MMU_BANKS.
+   482 				;----------------------------------------------------------------------------
+   483 2203 20 3E 22		RAM_BANKS_DET	JSR DET_628128		; start with detection of 628128 SRAM
+   484 2206 90 0B				BCC NORMAL_RAM		; C=0, normal RAM
+   485 						
+   486 2208 A9 70				LDA #<TXT_628128    	; Print 628128 RAM IC found
+   487 220A A0 27				LDY #>TXT_628128
+   488 220C 20 0A 24				JSR SPRINT	   	; print
+   489
+   490 220F A9 04				LDA #4			; 4 RAM-banks present
+   491 2211 D0 28				BNE RAMB_DONE		; branch always
+   492 						
+   493 2213 A9 00		NORMAL_RAM	LDA #0			; 
+   494 2215 8D 00 40				STA $4000          	; Init. first byte in RAM-bank
+   495 2218 AA					TAX 	   		; First RAM-bank
+   496 2219 BD 75 24		RAMB_LP1	LDA RAMB_TABLE,X   	; get value for PORTB
+   497 221C 8D 02 17				STA PORTB	   	; select RAM-bank
+   498 221F 8E 00 40				STX $4000	   	; First byte in RAM-bank
+   499 2222 E8					INX
+   500 2223 E0 1C				CPX #28		   	; table done?
+   501 2225 D0 F2				BNE RAMB_LP1	   	; branch if not done yet
+   502 						
+   503 2227 A9 03				LDA #NO_RAMBANK	   	; Main-bank, no RAM-bank
+   504 2229 8D 02 17				STA PORTB
+   505 						
+   506 						; Load the value in the main RAM-bank again.
+   507 						; 25=none, 21=4 banks (64K), 13=12 banks, 0 = 28 banks
+   508 222C AD 00 40				LDA $4000 	   
+   509 222F D0 04				BNE RAMB_LP2
+   510 						
+   511 2231 A9 1C				LDA #28		   	; 28 RAM-banks found
+   512 2233 D0 06				BNE RAMB_DONE		; branch always
+   513 						
+   514 2235 A9 19		RAMB_LP2	LDA #25
+   515 2237 38					SEC
+   516 2238 ED 00 40				SBC $4000
+   517 223B 85 C9		RAMB_DONE	STA MMU_BANKS	    	; A = 25-X	
+   518 223D 60					RTS
+   519
+   520 				;----------------------------------------------------------------------------
+   521 				; This routine detects the presence of a 628128 SRAM (128Kx8). This is the
+   522 				; default RAM for the JC2. If used in the 512K PCB, !MA17 is connected to
+   523 				; CS2. So if MA17=1, the entire RAM is deselected. Any other RAM just 
+   524 				; selects a RAM-bank.
+   525 				;----------------------------------------------------------------------------
+   526 223E AD FF 3F		DET_628128	LDA $3FFF		; This is always RAM in every JC2 configuration
+   527 2241 48					PHA			; save for now
+   528 2242 A9 55				LDA #$55
+   529 2244 8D FF 3F				STA $3FFF		; No RAM-bank, just normal RAM
+   530 2247 A9 23				LDA #$23		; MA17=1, RAM-bank enabled or RAM-deselected
+   531 2249 8D 02 17				STA PORTB		; This is either PORTB or the MMU-register
+   532 224C AE FF 3F				LDX $3FFF		; Now find out
+   533 						
+   534 224F A9 03				LDA #NO_RAMBANK		; select normal RAM again
+   535 2251 8D 02 17				STA PORTB
+   536 2254 68					PLA			; get saved value
+   537 2255 8D FF 3F				STA $3FFF		; and restore it
+   538 						
+   539 2258 E0 55				CPX #$55		; Same number again?
+   540 225A D0 02				BNE NO_RAM		; branch if 628128 detected
+   541 						
+   542 225C 18					CLC			; C=0, normal RAM detected
+   543 225D 60					RTS			; and return
+   544 						
+   545 225E 38			NO_RAM		SEC			; C=1, 628128 RAM detected
+   546 225F 60					RTS			; and return
+   547 						
+   548 				;----------------------------------------------------------------------------
+   549 				; This routine tests the memory of every RAM-bank present.
+   550 				;----------------------------------------------------------------------------
+   551 2260 A9 0D		RAM_BANKS_TEST	LDA #CR			; empty line
+   552 2262 20 52 E0				JSR COUT
+   553 2265 A9 00				LDA #0
+   554 2267 85 C8				STA BCNTR          	; init ram-bank counter
+   555
+   556 2269 AA			RB_TST1		TAX		   	; ram-bank counter
+   557 226A BD 75 24				LDA RAMB_TABLE,X   	; get value for PORTB
+   558 226D 8D 02 17				STA PORTB	   	; enable RAM-bank
+   559 						
+   560 2270 A9 79				LDA #<TXT_RAMB1    	; Print RAM-bank number
+   561 2272 A0 26				LDY #>TXT_RAMB1
+   562 2274 20 0A 24				JSR SPRINT	   	; print
+   563 2277 A5 C8				LDA BCNTR	   	;  
+   564 2279 20 B1 23				JSR NUMOUT2	   	; print current ram-bank number
+   565 227C A9 3A				LDA #':'
+   566 227E 20 52 E0				JSR COUT
+   567 2281 A9 20				LDA #' '
+   568 2283 20 52 E0				JSR COUT
+   569 						
+   570 2286 A0 00				LDY #0	           	; 0 = full-page
+   571 2288 84 D8				STY PGCNTR		; Zero LSB of PGCNTR
+   572 228A A2 40				LDX #$40	   	; 
+   573 228C 86 D9				STX PGCNTR+1	   	; RAM-bank starts at $4000
+   574 228E CA					DEX                     ; X=$3F => $40 pages = 16K
+   575 228F 20 99 20				JSR CHECK_RAM_LP   	; test memory in RAM-bank
+   576
+   577 2292 B0 0A				BCS RBTST_ERR	   	; branch if error
+   578 						
+   579 2294 A9 83				LDA #<TXT_RAMB_OK  	; Print RAM-bank OK
+   580 2296 A0 26				LDY #>TXT_RAMB_OK
+   581 2298 20 0A 24				JSR SPRINT	   	; Print RAM OK message
+   582 229B 4C A5 22				JMP RBTST_CNT
+   583 					
+   584 229E A9 91		RBTST_ERR    	LDA #<TXT_RAMB_NOK 	; Print RAM-bank error
+   585 22A0 A0 26				LDY #>TXT_RAMB_NOK
+   586 22A2 20 0A 24				JSR SPRINT	   	; Print error text
+   587 						
+   588 22A5 E6 C8		RBTST_CNT	INC BCNTR	   	; increment RAM-bank counter
+   589 22A7 A5 C8				LDA BCNTR
+   590 22A9 C5 C9				CMP MMU_BANKS      	; all banks done?
+   591 22AB D0 BC				BNE RB_TST1        	; branch if not all banks done
+   592 						
+   593 22AD A9 03				LDA #NO_RAMBANK	   	; BIOS and Monitor ROM are enabled
+   594 22AF 8D 02 17				STA PORTB	   	; Disable RAM-banks
+   595 22B2 60					RTS		   	; return
+   596
+   597 				;----------------------------------------------------------------------------
+   598 				; This routine tests the memory behind the Monitor ROM.
+   599 				;----------------------------------------------------------------------------
+   600 22B3 A9 A8		MON_RAM_TEST	LDA #<TXT_MONRAM1  	;
+   601 22B5 A0 26				LDY #>TXT_MONRAM1
+   602 22B7 20 0A 24				JSR SPRINT	   	; print
+   603 						
+   604 22BA 78					SEI		   	; disable interrupts
+   605 22BB AD 02 17				LDA PORTB
+   606 22BE 29 FD				AND #~MON_EN	   
+   607 22C0 8D 02 17				STA PORTB	   	; disable monitor ROM, enable RAM behind it
+   608 						
+   609 22C3 A2 03				LDX #$03   	   	; 03 = 4 pages = 1K
+   610 22C5 A0 00				LDY #0	           	; 0 = full-page
+   611 22C7 20 99 20				JSR CHECK_RAM_LP   	; test memory in RAM-bank
+   612 22CA 08					PHP		   	; save processor status
+   613 						
+   614 22CB AD 02 17				LDA PORTB
+   615 22CE 09 02				ORA #MON_EN	   	; enable monitor ROM again
+   616 22D0 8D 02 17				STA PORTB
+   617 22D3 58					CLI		   	; enable interrupts again
+   618 						
+   619 22D4 28					PLP		   	; get processor status again
+   620 22D5 B0 07				BCS MONRAM_ERR	   	; branch if error
+   621 						
+   622 22D7 A9 D9				LDA #<TXT_MONRAM_OK 	; RAM-bank OK
+   623 22D9 A0 26				LDY #>TXT_MONRAM_OK
+   624 22DB 4C 0A 24				JMP SPRINT          	; Print Monitor RAM OK message and return
+   625 					
+   626 22DE A9 E6		MONRAM_ERR    	LDA #<TXT_MONRAM_NOK 	; Print RAM-bank error
+   627 22E0 A0 26				LDY #>TXT_MONRAM_NOK
+   628 22E2 4C 0A 24				JMP SPRINT           	; Print error text and return
+   629
+   630 				;----------------------------------------------------------------------------
+   631 				; This routine tests the memory behind the BIOS ROM.
+   632 				;----------------------------------------------------------------------------
+   633 22E5 A9 F8		BIOS_RAM_TEST	LDA #<TXT_BIOSRAM1 	; First part of text
+   634 22E7 A0 26				LDY #>TXT_BIOSRAM1
+   635 22E9 20 0A 24				JSR SPRINT	   	; print
+   636 						
+   637 22EC 78					SEI		   	; disable interrupts
+   638 22ED AD 02 17				LDA PORTB
+   639 22F0 29 FE				AND #~BIOS_EN	   
+   640 22F2 8D 02 17				STA PORTB	   	; disable BIOS ROM, enable RAM behind it
+   641 						
+   642 22F5 A2 1F				LDX #$1F   	   	; $1F = $20 pages = 8K
+   643 22F7 A0 00				LDY #0	           	; 0 = full-page
+   644 22F9 20 99 20				JSR CHECK_RAM_LP   	; test memory in RAM-bank
+   645 22FC 08					PHP		   	; save processor status
+   646 						
+   647 22FD AD 02 17				LDA PORTB
+   648 2300 09 01				ORA #BIOS_EN	   	; enable BIOS ROM again
+   649 2302 8D 02 17				STA PORTB
+   650 2305 58					CLI		   	; enable interrupts again
+   651 						
+   652 2306 28					PLP		   	; get processor status again
+   653 2307 B0 07				BCS BIOSRAM_ERR	   	; branch if error
+   654 						
+   655 2309 A9 26				LDA #<TXT_BIOSRAM_OK  	; Print RAM OK
+   656 230B A0 27				LDY #>TXT_BIOSRAM_OK
+   657 230D 4C 0A 24				JMP SPRINT            	; Print BIOS RAM OK message and return
+   658 					
+   659 2310 A9 E6		BIOSRAM_ERR    	LDA #<TXT_BIOSRAM_NOK	; Print RAM error
+   660 2312 A0 26				LDY #>TXT_BIOSRAM_NOK
+   661 2314 4C 0A 24				JMP SPRINT            	; Print error text and return
+   662
+   663 				;----------------------------------------------------------------------------
+   664 				; This routine tests the memory behind the BASIC ROM.
+   665 				;----------------------------------------------------------------------------
+   666 2317 A9 33		BASIC_RAM_TEST	LDA #<TXT_BASICRAM1 	; First part of text
+   667 2319 A0 27				LDY #>TXT_BASICRAM1
+   668 231B 20 0A 24				JSR SPRINT	   	; print
+   669 						
+   670 231E A0 20				LDY #$20		; IOBASE + $20 selects RAM area
+   671 2320 B1 14				LDA (IOBASE),Y		; switch to RAM	   
+   672 						
+   673 2322 A2 2F				LDX #$2F   	   	; $2F = $30 pages = 12K
+   674 2324 A0 00				LDY #0	           	; 0 = full-page
+   675 2326 20 99 20				JSR CHECK_RAM_LP   	; test memory in RAM-bank
+   676 2329 08					PHP		   	; save processor status
+   677 						
+   678 232A A0 30				LDY #$30		; IOBASE + $30 selects ROM area
+   679 232C B1 14				LDA (IOBASE),Y		; switch to ROM again	   
+   680 						
+   681 232E 28					PLP		   	; get processor status again
+   682 232F B0 07				BCS BASICRAM_ERR   	; branch if error
+   683 						
+   684 2331 A9 62				LDA #<TXT_BASICRAM_OK  	; Print RAM OK
+   685 2333 A0 27				LDY #>TXT_BASICRAM_OK
+   686 2335 4C 0A 24				JMP SPRINT            	; Print BIOS RAM OK message and return
+   687 					
+   688 2338 A9 E6		BASICRAM_ERR   	LDA #<TXT_BASICRAM_NOK	; Print RAM error
+   689 233A A0 26				LDY #>TXT_BASICRAM_NOK
+   690 233C 4C 0A 24				JMP SPRINT            	; Print error text and return
+   691
+   692 				;----------------------------------------------------------------------------
+   693 				; This routine prints the title text and detects the CPU-type.
+   694 				;----------------------------------------------------------------------------
+   695 233F A9 EB		PR_TITLE	LDA #<TXT_TITLE     	; Print block nr
+   696 2341 A0 24				LDY #>TXT_TITLE
+   697 2343 20 0A 24				JSR SPRINT	    	; print
+   698 						
+   699 2346 A9 99				LDA #$99	    	; test for NMOS or CMOS
+   700 2348 18					CLC
+   701 2349 F8					SED
+   702 234A 69 01				ADC #$01
+   703 234C D8					CLD
+   704 234D F0 07				BEQ CPU_CMOS	    	; 0 = CMOS
+   705
+   706 234F A9 2D				LDA #<TXT_6502      	; Print 6502 NMOS found
+   707 2351 A0 26				LDY #>TXT_6502
+   708 2353 4C 0A 24				JMP SPRINT	    	; print and return
+   709
+   710 						OPT C+		    	; enable 65816 instructions
+   711 2356 A9 00		CPU_CMOS	LDA #0
+   712 2358 C2 02				rep #%00000010	    	; set Z-bit again
+   713 235A D0 07				BNE CPU_816
+   714 						
+   715 235C A9 38				LDA #<TXT_65C02     	; Print block nr
+   716 235E A0 26				LDY #>TXT_65C02
+   717 2360 4C 0A 24				JMP SPRINT	    	; print and return
+   718
+   719 2363 A9 44		CPU_816		LDA #<TXT_65816     	; Print block nr
+   720 2365 A0 26				LDY #>TXT_65816
+   721 2367 4C 0A 24				JMP SPRINT	    	; print and return
+   722 						OPT C-		    	; disable 65816 instructions
+   723 						
+   724 				;----------------------------------------------------------------------------
+   725 				; This routine prints a line of text for a block. The text to
+   726 				; print is already stored in PSTR by the READ_TABLE routine.
+   727 				;----------------------------------------------------------------------------
+   728 236A A9 29		PR_INFO		LDA #<TXT1          	; Print block nr
+   729 236C A0 25				LDY #>TXT1
+   730 236E 20 0A 24				JSR SPRINT
+   731 2371 A5 D7				LDA TBL_IDX	    	; use table index as block number
+   732 2373 20 91 E0				JSR HEXOUT          	; print block nr = page nr/4
+   733 2376 A9 31				LDA #<TXT1A          
+   734 2378 A0 25				LDY #>TXT1A
+   735 237A 20 0A 24				JSR SPRINT 		
+   736 						
+   737 237D A5 D4				LDA PRBMSB
+   738 237F 20 91 E0				JSR HEXOUT          	; print block begin-address
+   739 2382 A9 35				LDA #<TXT1B          
+   740 2384 A0 25				LDY #>TXT1B
+   741 2386 20 0A 24				JSR SPRINT 
+   742 						
+   743 2389 A5 D5				LDA PREMSB
+   744 238B 20 91 E0				JSR HEXOUT          	; print block end-address
+   745 238E A9 3A				LDA #<TXT1C          
+   746 2390 A0 25				LDY #>TXT1C
+   747 2392 20 0A 24				JSR SPRINT
+   748 						
+   749 2395 A5 D7				LDA TBL_IDX	    	; Check for K2, K3 or K4 IO-Area
+   750 2397 F0 11				BEQ PP1		    	; branch if TBL_IDX = 0
+   751 						
+   752 2399 C9 04				CMP #4
+   753 239B B0 0D				BCS PP1	    	    	; branch if TBL_IDX > 3
+   754 						
+   755 						; K2, K3 or K4 area
+   756 239D A9 4B				LDA #'K'
+   757 239F 20 52 E0				JSR COUT
+   758 23A2 A5 D7				LDA TBL_IDX
+   759 23A4 18					CLC
+   760 23A5 69 31				ADC #'1'	    	; TBL_IDX=1,2,3 => K2,K3,K4
+   761 23A7 20 52 E0				JSR COUT	    	; Print K number
+   762 						
+   763 23AA A5 D2		PP1		LDA PPSTR	    	; Pointer to 2nd part text to print
+   764 23AC A4 D3				LDY PPSTR+1
+   765 23AE 4C 0A 24				JMP SPRINT	    	; Print last part and return
+   766
+   767 				; **** Print A Byte As Decimal Number ******************************************
+   768 				; Input: A - number 00..63 (0..99)
+   769 				; ******************************************************************************
+   770 23B1 20 BD E0		NUMOUT2		JSR	DEC2STR
+   771 23B4 A5 F9			        LDA 	DIG1
+   772 23B6 C9 30				CMP 	#'0'
+   773 23B8 F0 03				BEQ	NU20		; no -leading-zero
+   774
+   775 23BA 20 44 E0				JSR	BOUT
+   776 23BD A5 F8		NU20:		LDA	DIG0
+   777 23BF 4C 44 E0				JMP	BOUT		; print and return
+   778
+   779 				;----------------------------------------------------------------------------
+   780 				; This routine prints a RAM OK message.
+   781 				;----------------------------------------------------------------------------
+   782 23C2 A5 CB		PR_RAM_OK       LDA KB		    	; size in KB or B
+   783 23C4 C9 64				CMP #100
+   784 23C6 90 0A				BCC PRKB            	; branch if size in KB
+   785 						
+   786 23C8 20 A7 E0				JSR NUMOUT	    	; print size in bytes
+   787 23CB A9 BF		PR_RAM1		LDA #<TXT_RAM_OK    	; Print ' bytes RAM OK' message
+   788 23CD A0 25				LDY #>TXT_RAM_OK
+   789 23CF 4C 0A 24				JMP SPRINT          	; print and return
+   790 						
+   791 23D2 C9 04		PRKB		CMP #4
+   792 23D4 90 0C				BCC PR512
+   793 						
+   794 23D6 4A					LSR
+   795 23D7 4A					LSR
+   796 23D8 20 B1 23				JSR NUMOUT2	    	; print size in KB
+   797 23DB A9 B3				LDA #<TXT_RAMKB_OK    	; Print RAM OK message
+   798 23DD A0 25				LDY #>TXT_RAMKB_OK
+   799 23DF 4C 0A 24				JMP SPRINT          	; print and return
+   800
+   801 23E2 A9 35		PR512		LDA #'5'	    	; 2 pages = 512 bytes
+   802 23E4 20 52 E0				JSR COUT
+   803 23E7 A9 31				LDA #'1'
+   804 23E9 20 52 E0				JSR COUT
+   805 23EC A9 32				LDA #'2'
+   806 23EE 20 52 E0				JSR COUT
+   807 23F1 4C CB 23				JMP PR_RAM1         	; print '512 bytes RAM OK'
+   808 						
+   809 				;----------------------------------------------------------------------------
+   810 				; This routine prints a ROM ERROR message.
+   811 				;----------------------------------------------------------------------------
+   812 23F4 A9 F9		PR_ROM_ERR      LDA #<TXT_ROM_NOK   	; Print ROM error
+   813 23F6 A0 25				LDY #>TXT_ROM_NOK
+   814 23F8 20 0A 24				JSR SPRINT
+   815 23FB A5 CF				LDA ROM_CS+1
+   816 23FD 20 91 E0				JSR HEXOUT
+   817 2400 A5 CE				LDA ROM_CS
+   818 2402 20 91 E0				JSR HEXOUT	    
+   819 2405 A9 0D				LDA #CR
+   820 2407 4C 52 E0				JMP COUT	    	; print and return
+   821 						
+   822 				;----------------------------------------------------------------------------
+   823 				; This routine prints a string to the terminal
+   824 				;----------------------------------------------------------------------------
+   825 240A 85 EA		SPRINT		STA PSTR	    	; LSB of text-pointer
+   826 240C 84 EB				STY PSTR+1	    	; MSB of text-pointer
+   827 240E 4C 83 E0				JMP STROUT	    	; BIOS print string routine
+   828 						
+   829 				;----------------------------------------------------------------------------
+   830 				; This routine copies the entry for the BASIC ROM aread into the RAM-table
+   831 				;----------------------------------------------------------------------------
+   832 2411 A2 04		COPY_B0_C0	LDX #4
+   833 2413 BD E6 24		COPY_LP1	LDA RAM_TABLE_B0,X	; Get info for $B000-$DFFF area
+   834 2416 9D DC 24				STA RAM_TABLE_C0,X	; and overwrite $C000-$DFFF area
+   835 2419 CA					DEX
+   836 241A 10 F7				BPL COPY_LP1		; branch if not done yet
+   837 241C 60					RTS			; return
+   838 						
+   839 				;----------------------------------------------------------------------------
+   840 				; This routine prints the result of the BASIC-IO card detection, 
+   841 				; including the number of RAM-banks found.
+   842 				;----------------------------------------------------------------------------
+   843 241D A9 89		PR_IOL_CARD	LDA #<TXT_IOL1      	; Print 1st part of message
+   844 241F A0 27				LDY #>TXT_IOL1
+   845 2421 20 0A 24				JSR SPRINT          	; print and return
+   846 2424 A5 15				LDA IOBASEH
+   847 2426 F0 1B				BEQ IOL_NOK		; 0 = no card detected
+   848 						
+   849 2428 A9 99				LDA #<TXT_IOL_OK      	; Print 2nd part of message
+   850 242A A0 27				LDY #>TXT_IOL_OK
+   851 242C 20 0A 24				JSR SPRINT
+   852 242F A5 15				LDA IOBASEH
+   853 2431 20 91 E0				JSR HEXOUT		; print base-address
+   854 2434 A9 00				LDA #$00
+   855 2436 20 91 E0				JSR HEXOUT
+   856 2439 A9 0D				LDA #CR			; print 2xCR and return
+   857 243B 20 52 E0				JSR COUT
+   858 243E A9 0D				LDA #CR
+   859 2440 4C 52 E0				JMP COUT
+   860
+   861 2443 A9 A7		IOL_NOK		LDA #<TXT_IOL_NOK      	; Print 2nd part of message
+   862 2445 A0 27				LDY #>TXT_IOL_NOK
+   863 2447 4C 0A 24				JMP SPRINT		; print and return
+   864 						
+   865 				;----------------------------------------------------------------------------
+   866 				; This routine prints the results of the PIA detection.
+   867 				;----------------------------------------------------------------------------
+   868 244A A5 C7		PR_PIA_RESULT	LDA PIA_PRESENT
+   869 244C D0 07				BNE PR_PIA_PRES		; branch if PIA present
+   870
+   871 244E A9 6A				LDA #<TXT_PIA_NOT
+   872 2450 A0 26				LDY #>TXT_PIA_NOT
+   873 2452 20 0A 24				JSR SPRINT		; print 'not'
+   874 						
+   875 2455 A9 6F		PR_PIA_PRES	LDA #<TXT_PIA_DET
+   876 2457 A0 26				LDY #>TXT_PIA_DET
+   877 2459 20 0A 24				JSR SPRINT		; print 'detected'
+   878 						
+   879 245C A5 C9				LDA MMU_BANKS	    	; #RAM-banks found
+   880 245E C9 0A				CMP #10
+   881 2460 90 06				BCC PR_PIA_LT10		; branch if 0-9 RAM-banks found
+   882 						
+   883 2462 20 B1 23				JSR NUMOUT2	    	; >= 10, print 2-digit number
+   884 2465 4C 6E 24				JMP PR_PIA_RB1
+   885 						
+   886 2468 18			PR_PIA_LT10	CLC		    	; < 10, print 1-digit number
+   887 2469 69 30				ADC #'0'
+   888 246B 20 52 E0				JSR COUT
+   889 						
+   890 246E A9 58		PR_PIA_RB1	LDA #<TXT_PIA2      	; Print 2nd part of message
+   891 2470 A0 26				LDY #>TXT_PIA2
+   892 2472 4C 0A 24				JMP SPRINT          	; print and return
+   893
+   894 				;--------------------------------------------------------------------------
+   895 				; This table defines all PORTB values for the RAM-banks in the JC2 system.
+   896 				; RAM-banks are numbered from R4..R28.
+   897 				;--------------------------------------------------------------------------
+   898 2475 13 17 1B 1F 23 27 + RAMB_TABLE	.byte $13,$17,$1B,$1F,$23,$27,$2B,$2F
+   899 247D 33 37 3B 3F 43 47 +                 .byte $33,$37,$3B,$3F,$43,$47,$4B,$4F
+   900 2485 53 57 5B 5F 63 67 +                 .byte $53,$57,$5B,$5F,$63,$67,$6B,$6F
+   901 248D 73 77 7B 7F		                .byte $73,$77,$7B,$7F
+   902 						
+   903 				;--------------------------------------------------------------------------
+   904 				; This table defines all memory areas of the JC2 computer system
+   905 				; Entries are: Mode, Block begin MSB, Check begin MSB, text pointer
+   906 				;--------------------------------------------------------------------------
+   907 2491 01 00 02		RAM_TABLE	.byte $01, $00, $02     ; $0000 - $07FF, check from $0200
+   908 2494 28 25				.word TXT0
+   909 = 0005			TBL1_SZ = (*-RAM_TABLE)		
+   910 2496 00 08 08				.byte TNO, $08, $08     ; $0800 - $0BFF, K2 IO-area, no RAM-check  
+   911 2499 0F 26				.word TXT_KX	
+   912 249B 00 0C 0C				.byte TNO, $0C, $0C     ; $0C00 - $0FFF, K3 IO-area, no RAM-check
+   913 249E 0F 26				.word TXT_KX   	
+   914 24A0 00 10 10				.byte TNO, $10, $10     ; $1000 - $13FF, K4 IO-area, no RAM-check
+   915 24A3 0F 26				.word TXT_KX   	
+   916 24A5 01 14 14				.byte TRAM, $14, $14    ; $1400 - $15FF, check all
+   917 24A8 28 25				.word TXT0   	
+   918 24AA 00 16 16				.byte TNO, $16, $16     ; $1600 - $16FF, 6551 ACIA, no RAM-check
+   919 24AD 3F 25				.word TXT_ACIA   	
+   920 24AF 03 17 17				.byte TPIA, $17, $17    ; $1700 - $17FF, 6520 PIA, no RAM-check
+   921 24B2 4A 25		TBL_PIA_TXT	.word TXT_PIA   	
+   922 24B4 01 18 18				.byte TRAM, $18, $18    ; $1800 - $19FF, check all
+   923 24B7 28 25				.word TXT0   	
+   924 24B9 80 1A 1A				.byte TRIOT, $1A, $1A   ; $1800 - $1AFF, 6532 RIOT
+   925 24BC 67 25				.word TXT_RIOT 		; 6532 RIOT, check RAM (128 B) at $1A00-$1A7F
+   926 24BE 01 1B 1B				.byte TRAM, $1B, $1B    ; $1B00 - $1BFF, check all
+   927 24C1 28 25				.word TXT0   	
+   928 24C3 02 1C 1C				.byte TROM, $1C, $1C    ; $1C00 - $1FFF, JC Monitor ROM
+   929 24C6 73 25				.word TXT_MON   	
+   930 24C8 01 20 27				.byte TRAM, $20, $27    ; $2000 - $3FFF, check from $2700 (this program!)
+   931 24CB 28 25				.word TXT0   	
+   932 24CD 01 40 40				.byte TRAM, $40, $40    ; $4000 - $7FFF, check all
+   933 24D0 28 25				.word TXT0   	
+   934 24D2 01 80 80				.byte TRAM, $80, $80    ; $8000 - $9FFF, check all
+   935 24D5 9D 25				.word TXT_USER_RAM   	
+   936 24D7 01 A0 A0				.byte TRAM, $A0, $A0    ; $A000 - $BFFF, check all
+   937 24DA 9D 25				.word TXT_USER_RAM   	
+   938 24DC 01 C0 C0		RAM_TABLE_C0	.byte TRAM, $C0, $C0    ; $C000 - $DFFF, check all
+   939 24DF 9D 25				.word TXT_USER_RAM  	
+   940 24E1 02 E0 E0				.byte TROM, $E0, $E0    ; $E000 - $FFFF, JC2 BIOS ROM, ROM-checksum only
+   941 24E4 89 25				.word TXT_BIOS   	
+   942 = 0011			TBL_MAX = (*-RAM_TABLE)/TBL1_SZ
+   943
+   944 				; If the IO card with BASIC ROM is present, this entry is copied
+   945 				; over the existing $C000-$DFFF entry.
+   946 24E6 02 B0 B0		RAM_TABLE_B0	.byte TROM, $B0, $B0    ; $B000 - $DFFF, BASIC ROM
+   947 24E9 9D 25				.word TXT_USER_RAM  	
+   948
+   949 24EB 4A 43 20 5D 5B 20 + TXT_TITLE	.by     'JC ][ Memory-Tester (ROM/RAM) v0.34 by Emile' CR
+   950 2518 43 50 55 2D 74 79 + 		.by     'CPU-type     : ' $00
+   951 2528 00			TXT0		.byte	$00
+   952 2529 42 6C 6F 63 6B 20 + TXT1		.by 	'Block $' $00
+   953 2531 3A 20 24 00		TXT1A		.by 	': $' $00
+   954 2535 30 30 2D 24 00	TXT1B		.by 	'00-$' $00
+   955 253A 46 46 2C 20 00	TXT1C		.by 	'FF, ' $00
+   956 253F 36 35 35 31 20 41 + TXT_ACIA	.by     '6551 ACIA' CR $00
+   957 254A 36 35 32 30 20 50 + TXT_PIA		.by     '6520 PIA (MMU) ' $00
+   958 255A 41 54 46 31 35 30 + TXT_MMU		.by     'ATF1504 MMU ' $00
+   959 2567 36 35 33 32 20 52 + TXT_RIOT	.by     '6532 RIOT, ' $00
+   960 2573 4A 43 20 4D 6F 6E + TXT_MON		.by	'JC Monitor ROM 1 KB, ' $00
+   961 2589 4A 43 32 20 42 49 + TXT_BIOS	.by 	'JC2 BIOS ROM 8 KB, ' $00
+   962 259D 55 73 65 72 20 52 + TXT_USER_RAM	.by 	'User RAM or IO-area, ' $00
+   963 25B3 20 4B 42 20 52 41 + TXT_RAMKB_OK	.by 	' KB RAM OK' CR $00
+   964 25BF 20 62 79 74 65 73 + TXT_RAM_OK	.by 	' bytes RAM OK' CR $00
+   965 25CE 52 41 4D 20 65 72 + TXT_RAM_NOK	.by 	'RAM error or not present' CR $00
+   966 25E8 52 4F 4D 20 63 68 + TXT_ROM_OK	.by 	'ROM checksum OK' CR $00
+   967 25F9 52 4F 4D 20 63 68 + TXT_ROM_NOK	.by 	'ROM checksum error: $' $00
+   968 260F 20 49 4F 2D 61 72 + TXT_KX		.by 	' IO-area, no RAM/ROM present' CR $00
+   969 262D 4E 4D 4F 53 20 36 + TXT_6502	.by     'NMOS 6502'     CR $00
+   970 2638 43 4D 4F 53 20 36 + TXT_65C02	.by     'CMOS 65C02'    CR $00
+   971 2644 43 4D 4F 53 20 36 + TXT_65816	.by     'CMOS 65C816 16-bit' CR $00 
+   972 2658 20 52 41 4D 2D 62 + TXT_PIA2        .by     ' RAM-banks found' CR $00
+   973 266A 6E 6F 74 20 00	TXT_PIA_NOT	.by 	'not ' $00
+   974 266F 70 72 65 73 65 6E + TXT_PIA_DET	.by	'present, ' $00
+   975 2679 52 41 4D 2D 42 41 + TXT_RAMB1	.by 	'RAM-BANK ' $00
+   976 2683 31 36 20 4B 42 20 + TXT_RAMB_OK	.by 	'16 KB RAM OK' CR $00
+   977 2691 52 41 4D 2D 62 61 + TXT_RAMB_NOK	.by 	'RAM-bank memory error' CR $00
+   978 26A8 20 20 20 20 20 20 + TXT_MONRAM1	.by	'           $1C00-$1FFF, RAM behind Monitor ROM, ' $00
+   979 26D9 31 20 4B 42 20 52 + TXT_MONRAM_OK	.by     '1 KB RAM OK' CR $00
+   980 26E6			TXT_BASICRAM_NOK
+   981 26E6			TXT_BIOSRAM_NOK
+   982 26E6 52 41 4D 20 6D 65 + TXT_MONRAM_NOK  .by	'RAM memory error' CR $00
+   983 26F8 20 20 20 20 20 20 + TXT_BIOSRAM1	.by	'           $E000-$FFFF, RAM behind BIOS ROM, ' $00
+   984 2726 38 20 4B 42 20 52 + TXT_BIOSRAM_OK	.by     '8 KB RAM OK' CR $00
+   985 2733 20 20 20 20 20 20 + TXT_BASICRAM1	.by	'           $B000-$DFFF, RAM behind BASIC ROM, ' $00
+   986 2762 31 32 20 4B 42 20 + TXT_BASICRAM_OK	.by     '12 KB RAM OK' CR $00
+   987 2770 53 52 41 4D 20 36 + TXT_628128	.by	'SRAM 628128 IC detected' CR $00
+   988 2789 42 41 53 49 43 2D + TXT_IOL1        .by     'BASIC-IO card: ' $00
+   989 2799 64 65 74 65 63 74 + TXT_IOL_OK	.by	'detected at $' $00
+   990 27A7 6E 6F 74 20 70 72 + TXT_IOL_NOK	.by	'not present' CR CR $00
+   991 = 27B5			MEM_TEST_END = *

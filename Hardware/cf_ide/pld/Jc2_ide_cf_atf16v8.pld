@@ -1,0 +1,52 @@
+/*---------------------------------------------------------------*/
+/* Compiler       : WinCUPL                                      */
+/* HW Version     : JC2 CF IDE                                   */
+/* Version history:                                              */
+/* V01: First development version.                               */
+/*---------------------------------------------------------------*/
+Name     jc2_ide_cf_atf16v8;
+PartNo   ATF16V8 ;
+Date     21-01-2025 ;
+Revision 01 ;
+Designer Emile ;
+Company  - ;
+Assembly None ;
+Location IC2 ;
+Device   G16V8a; /* Complex mode, similar to 16L8 and 16P8 */
+
+/* ******************************* INPUT PINS **********************************/
+PIN   1 = !KX;                     /* 0 = $0800-$0BFF address range selected   */ 
+PIN   2 = PHI2;                    /* CPU PHI2 clock-signal                    */ 
+PIN   3 = R_W;                     /* R!W signal from CPU                      */ 
+PIN   4 = A9;                      /* A9 address line                          */
+PIN   5 = A8;                      /* A8 address line                          */
+PIN   6 = A7;                      /* A7 address line                          */ 
+PIN   7 = A6;                      /* A6 address line                          */ 
+PIN   8 = A5;                      /* A5 address linea                         */ 
+PIN   9 = A4;                      /* A4 address line                          */ 
+PIN  11 = D0;                      /* D0 signal from CPU                       */ 
+PIN  13 = A3;                      /* A3 address line                          */ 
+/* ******************************** OUTPUT PINS ********************************/
+PIN  12 = !DIOW;                   /* !DIOW signal for IDE-44 interface        */ 
+PIN  14 = !DIOR;                   /* !DIOR signal for IDE-44 interface        */ 
+PIN  15 = !RST;                    /* !RST  signal for IDE-44 interface        */ 
+PIN  16 = !KX1;                    /* !KX signal, delayed 30 nsec.             */ 
+PIN  17 = !KX2;                    /* IO                                       */ 
+PIN  18 = !KX3;                    /* IO                                       */ 
+PIN  19 = !KXD;                    /* IO                                       */ 
+/* *****************************************************************************/
+
+KX1    = KX;
+KX1.oe = 'b'0;
+KX2    = KX1;
+KX2.oe = 'b'0;
+KX3    = KX2;
+KX3.oe = 'b'0;
+KXD    = KX3;
+
+DIOW = KX & PHI2 & !A9 & !A8 & !A7 & !A6 & !A5 & !A4 & !A3 & !R_W;       /* $0800-$0807 write */
+
+DIOR = KX & PHI2 & !A9 & !A8 & !A7 & !A6 & !A5 & !A4 & !A3 &  R_W;       /* $0800-$0807 read */
+
+RST  = KX & PHI2 & !A9 & !A8 & !A7 & !A6 & !A5 & !A4 &  A3 & !R_W & !D0; /* $0808-$080F write 0 */
+
