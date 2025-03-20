@@ -63,8 +63,7 @@
         "silk_overlap|150450000|49300000|284aa46d-e638-4c6d-a165-b8176e5e4419|875f6a8a-6178-464a-936c-eca8caeb5230",
         "silk_overlap|150450000|53500000|284aa46d-e638-4c6d-a165-b8176e5e4419|888440e2-578b-4bc6-811f-ce4cf5822ef8",
         "silk_overlap|150450000|57700000|284aa46d-e638-4c6d-a165-b8176e5e4419|a6e8348c-f198-446c-b03a-2763d01cf873",
-        "silk_overlap|150450000|61900000|284aa46d-e638-4c6d-a165-b8176e5e4419|c78a0bde-d592-416e-bb8e-7e46148f384d",
-        "starved_thermal|148650000|47700000|cd3756e2-96df-44ea-a10c-d5d7c1d06902|875f6a8a-6178-464a-936c-eca8caeb5230|F.Cu"
+        "silk_overlap|150450000|61900000|284aa46d-e638-4c6d-a165-b8176e5e4419|c78a0bde-d592-416e-bb8e-7e46148f384d"
       ],
       "meta": {
         "version": 2
@@ -496,7 +495,7 @@
       "gencad": "",
       "idf": "",
       "netlist": "",
-      "plot": "",
+      "plot": "Gerber/",
       "pos_files": "",
       "specctra_dsn": "",
       "step": "",
