@@ -2,12 +2,14 @@
 /* Compiler       : WinCUPL                                      */
 /* HW Version     : JC2 CF IDE                                   */
 /* Version history:                                              */
-/* V01: First development version.                               */
+/* V010: First development version.                              */
+/* V020: Base-address changed to $0880                           */
+/* V021: KX1,Kx2,KX3 outputs enabled, did not work as intended   */
 /*---------------------------------------------------------------*/
 Name     jc2_ide_cf_atf16v8;
 PartNo   ATF16V8 ;
-Date     21-01-2025 ;
-Revision 01 ;
+Date     19-03-2025 ;
+Revision 021 ;
 Designer Emile ;
 Company  - ;
 Assembly None ;
@@ -30,23 +32,20 @@ PIN  13 = A3;                      /* A3 address line                          *
 PIN  12 = !DIOW;                   /* !DIOW signal for IDE-44 interface        */ 
 PIN  14 = !DIOR;                   /* !DIOR signal for IDE-44 interface        */ 
 PIN  15 = !RST;                    /* !RST  signal for IDE-44 interface        */ 
-PIN  16 = !KX1;                    /* !KX signal, delayed 30 nsec.             */ 
-PIN  17 = !KX2;                    /* IO                                       */ 
-PIN  18 = !KX3;                    /* IO                                       */ 
-PIN  19 = !KXD;                    /* IO                                       */ 
+PIN  16 = !KX1;                    /* !KX signal, delayed                      */ 
+PIN  17 = !KX2;                    /* !KX signal, delayed                      */ 
+PIN  18 = !KX3;                    /* !KX signal, delayed                      */ 
+PIN  19 = !KXD;                    /* !KX signal, delayed 30 nsec.             */ 
 /* *****************************************************************************/
 
 KX1    = KX;
-KX1.oe = 'b'0;
 KX2    = KX1;
-KX2.oe = 'b'0;
 KX3    = KX2;
-KX3.oe = 'b'0;
 KXD    = KX3;
 
-DIOW = KX & PHI2 & !A9 & !A8 & !A7 & !A6 & !A5 & !A4 & !A3 & !R_W;       /* $0800-$0807 write */
+DIOW = KX & PHI2 & !A9 & !A8 & A7 & !A6 & !A5 & !A4 & !A3 & !R_W;       /* $0880-$0887 write */
 
-DIOR = KX & PHI2 & !A9 & !A8 & !A7 & !A6 & !A5 & !A4 & !A3 &  R_W;       /* $0800-$0807 read */
+DIOR = KX & PHI2 & !A9 & !A8 & A7 & !A6 & !A5 & !A4 & !A3 &  R_W;       /* $0880-$0887 read */
 
-RST  = KX & PHI2 & !A9 & !A8 & !A7 & !A6 & !A5 & !A4 &  A3 & !R_W & !D0; /* $0808-$080F write 0 */
+RST  = KX & PHI2 & !A9 & !A8 & A7 & !A6 & !A5 & !A4 &  A3 & !R_W & !D0; /* $0888-$088F write 0 */
 
