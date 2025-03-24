@@ -6660,7 +6660,7 @@
 		)
 		(uuid "ffcf9ceb-7ae2-4cb3-89f5-af45e94209ec")
 	)
-	(text "DIOW = KX & PHI2 & !A9 & !A8 & !A7 & !A6 & !A5 & !A4 & !A3 & !R_W;       /* $0800-$0807 write */\nDIOR = KX & PHI2 & !A9 & !A8 & !A7 & !A6 & !A5 & !A4 & !A3 &  R_W;       /* $0800-$0807 read */\nRST  = KX & PHI2 & !A9 & !A8 & !A7 & !A6 & !A5 & !A4 &  A3 & !R_W & !D0; /* $0808-$080F write 0 */\nKXD  = KX delayed approx. 30 nsec."
+	(text "DIOW = KX & PHI2 & !A9 & !A8 & A7 & !A6 & !A5 & !A4 & !A3 & !R_W;       /* $0880-$0887 write */\nDIOR = KX & PHI2 & !A9 & !A8 & A7 & !A6 & !A5 & !A4 & !A3 &  R_W;       /* $0880-$0887 read */\nRST  = KX & PHI2 & !A9 & !A8 & A7 & !A6 & !A5 & !A4 &  A3 & !R_W & !D0; /* $0888-$088F write 0 */\nKXD  = KX delayed approx. 30 nsec."
 		(exclude_from_sim no)
 		(at 93.472 83.312 0)
 		(effects
