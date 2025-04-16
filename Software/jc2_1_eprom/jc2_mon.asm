@@ -14,31 +14,6 @@
 ; MADS (MAD-Assembler) by : E. v.d. Logt,      December 2024
 ;----------------------------------------------------------------------------
 
-; Editor's pointers and temps in page zero
-        KEY     EQU     $00E1   ;1-byte
-        BEGADR  EQU     $00E2   ;2-byte Begin Address Pointer
-        ENDADR  EQU     $00E4   ;2-byte End Address Pointer
-        CURADR  EQU     $00E6   ;2-byte Current Address Pointer
-        CENDADR EQU     $00E8   ;2-byte Current End Address Pointer
-        MOVADR  EQU     $00EA   ;2-byte 
-        TABLEA  EQU     $00EC   ;2-byte
-        LABELS  EQU     $00EE   ;1-byte
-
-;       MPU registers in page zero
-
-        BYTES   EQU     $00F6   ;1-byte Number of bytes to be displayed
-        COUNT   EQU     $00F7   ;1-byte
-
-;       Hex display buffers in page zero
-        INL     EQU     $00F8   ;1-byte
-        INH     EQU     $00F9   ;1-byte
-        POINT   EQU     $00FA   ;2-byte
-        
-;       Temporary data-buffers in page zero
-        TEMPX   EQU     $00FD   ;1-byte
-        NIBBLE  EQU     $00FE   ;1-byte
-        MODE    EQU     $00FF   ;1-byte
-
 ;       Beginners may load these locations
 ;       $1C00 for step by step modus and BRK command
 

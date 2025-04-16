@@ -1592,13 +1592,13 @@ CMPADDR		LDA  	ADRL       	; see if there's more to print
 
 ;*******************************************************************************
 
-JCRESET		LDA	#$06		; set PB5 = L (WRITE)
+JCRESET		LDA	#$06			; set PB5 = L (WRITE)
 		STA	PBD
 		SEI
 		JSR     INITVECT
                 JSR     TAPEIRQ_OFF
 		CLI
-		JMP	RESET		; jump to Junior Computer reset routine
+		JMP	MONITOR_BLOCK.RESET	; jump to Junior Computer reset routine
 
 ; ******************************************************************************
 ; String Data Section

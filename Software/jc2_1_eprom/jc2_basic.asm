@@ -1,5 +1,5 @@
 
-; Enhanced BASIC to assemble under 6502 simulator, $ver 2.25
+; Enhanced BASIC ver 2.25
 
 ; $E7E1 $E7CF $E7C6 $E7D3 $E7D1 $E7D5 $E7CF $E81E $E825
 
@@ -17,47 +17,15 @@
 ; 2.20	added ELSE to IF .. THEN and fixed IF .. GOTO <statement> to cause error
 ; 2.21	fixed IF .. THEN RETURN to not cause error
 ; 2.22	fixed RND() breaking the get byte routine
-; 2.25  Emile: I2C addresses corrected for V1.1.4 bios.
+; 2.25  Emile: I2C addresses corrected for V1.1.4 bios and integrated with BIOS & MON source-files.
 ; ********************************************************************************************************
 
 ; changes by Joerg Walke
 ; ----------------------
-
 ; 2022/05/14 added command BEEP
 ; 2022/05/15 added command PLIST
 ; 2022/05/16 changed BPL SwapErr to BNE SwapErr in LAB_SWAP to avoid command always throwing 'Type mismatch Error'
 ; 2024/02/03 Source adapted for MAD-Assembler
-
-; Junior Computer 2 Monitor Routines and Constants
-
-PROC_SETSTDOUTID	= SET_STDOUTID	; Set Standard Out Routine ID
-PROC_SETSTDOUT		= SET_STDOUTID	; Set Standard Out Routine
-PROC_SETSTDINID		= SET_STDINID	; Set Standard In Routine ID
-PROC_DEVOPEN		= OPEN_DEVICE	; Open Device for Read/Write
-
-PROC_I2C_START		= I2C_START	; Send I2C Start Condition
-PROC_I2C_STOP		= I2C_STOP	; Send I2C Stop Condition
-PROC_I2C_READ_DEV	= I2C_READ_DEV	; Read I2C Device
-PROC_I2C_WRITE_DEV	= I2C_WRITE_DEV	; Write I2C Device
-PROC_I2C_SEND		= I2C_SEND	; Send a Byte to I2C Device
-PROC_I2C_RCV		= I2C_RCV	; Receive a Byte from I2C Device
-
-PROC_DELAY		= DELAY		; Delay routine
-
-; change input buffer to last 151 bytes in page 7
-
-INPBUF	  		= $768
-
-; **** Standard IO Routine Vectors *****************************************
-
-VEC_BEEP		= STDBEEP
-
-VEC_DEVCMD		= DEVCMD		; current opened device command vector (Junior Computer 2)
-
-VEC_IN			= STDIN     		; input vector  (Junior Computer 2)
-VEC_OUT			= STDOUT 	  	; output vector (Junior Computer 2)
-VEC_CMD			= STDCMD		; command vector (Junior Computer 2)
-
 ; ********************************************************************************************************
 
 ; zero page use ..
@@ -102,10 +70,6 @@ nums_3			= nums_1+2	; number to bin/hex string convert LSB
 ;			= $17		; *used by JC2 system
 ;			= $18		; *used by JC2 system
 ;			= $19		; *used by JC2 system 
-
-;			= $1A
-;			...
-;			= $59
 ; *************************************************************************
 
 Temp1			= $1A		; temporary byte for free use
@@ -327,39 +291,6 @@ Rbyte1			= Rbyte4+1	; most significant PRNG byte
 Rbyte2			= Rbyte4+2	; middle PRNG byte
 Rbyte3			= Rbyte4+3	; least significant PRNG byte
 
-; 			= $DC		; *used by Junior 2 system
-; 			= $DD		; *used by Junior 2 system
-; 			= $DE		; *used by Junior 2 system
-; 			= $DF		; *used by Junior 2 system
-; 			= $E0		; **used by Junior 2 system
-; 			= $E1		; **used by Junior 2 system
-;			= $E2		; **used by Junior 2 system
-;			= $E3		; **used by Junior 2 system
-;			= $E4		; *used by Junior 2 system
-;			= $E5		; *used by Junior 2 system
-;			= $E6		; *used by Junior 2 system
-;			= $E7		; *used by Junior 2 system
-;			= $E8		; *used by Junior 2 system
-;			= $E9		; *used by Junior 2 system
-;			= $EA		; *used by Junior 2 system
-;			= $EB		; *used by Junior 2 system
-;			= $EC		; *used by Junior 2 system
-;			= $ED		; unused
-;			= $EE		; unused
-
-; pointers used by Junior Computer ][ ****************************
-
-ADREL			= $F8	; end address low
-ADREH			= $F9	; end address high
-ADRSL			= $FA	; start address low
-ADRSH			= $FB	; start addressmhigh
-
-; ****************************************************************
-
-Decss			= $EF		; number to decimal string start
-Decssp1			= Decss+1	; number to decimal string start
-
-;			= $FF		; decimal string end
 
 ; token values needed for BASIC
 
@@ -532,7 +463,8 @@ Ibuffs		= VEC_CC+$14		; start of input buffer after IRQ/NMI code
 Ibuffe		= Ibuffs+$7F		; end of input buffer
 
 Ram_base	= $2001			; start of user RAM (set as needed, should be page aligned)
-Ram_top		= $B000			; end of user RAM+1 (set as needed, should be page aligned)
+
+INPBUF	  	= $768			; change input buffer to last 151 bytes in page 7
 
 ; BASIC cold start entry point
 ; new page 2 initialisation, copy block to ccflag on
@@ -606,7 +538,7 @@ LAB_2D93
 
 	INC	Itemph				; increment temporary integer high byte
 	LDA	Itemph				; get high byte
-	CMP	#>Ram_top			; compare with top of RAM+1
+	CMP	#>RAM_TOP			; compare with top of RAM+1
 	BEQ	LAB_2DB6			; branch if match (end of user RAM)
 
 LAB_2D99
@@ -639,15 +571,15 @@ LAB_2DB6
 
 
 ; uncomment these lines if you want to check on the high limit of memory. Note if
-; Ram_top is set too low then this will fail. default is ignore it and assume the
+; RAM_TOP is set too low then this will fail. default is ignore it and assume the
 ; users know what they're doing!
 
-;	CPY	#>Ram_top			; compare with top of RAM high byte
+;	CPY	#>RAM_TOP			; compare with top of RAM high byte
 ;	BCC	MEM_OK				; branch if < RAM top
 
 ;	BNE	LAB_GMEM			; if too large go try again
 						; else was = so compare low bytes
-;	CMP	#<Ram_top			; compare with top of RAM low byte
+;	CMP	#<RAM_TOP			; compare with top of RAM low byte
 ;	BEQ	MEM_OK				; branch if = RAM top
 
 ;	BCS	LAB_GMEM			; if too large go try again
@@ -7525,7 +7457,7 @@ LAB_LOD_FAC2_2
 
 ; Call Device Command Routine *************
 CALL_CMD
-	JMP	(VEC_DEVCMD)		; call device command
+	JMP	(DEVCMD)		; current opened device command vector (Junior Computer 2)
 
 ; Get Null Terminated String Parameter ****
 LAB_GETSTRPARM
@@ -7611,7 +7543,7 @@ SET_LOADADR
 	LDX	#$20
 	STX	ADRSH			; set load destination address high
 	ORA	#$20			; it's a storage device
-	JSR	PROC_DEVOPEN		; open device
+	JSR	OPEN_DEVICE		; Open Device for Read/Write
 	PLA
 	BEQ	CALL_LOAD		; device id = 0?
 	JSR	LAB_GETSTRPARM		; no, get string parameter
@@ -7647,7 +7579,7 @@ SET_SAVEADR
 	STX	Ram_base
 	STX	ADREH
 	ORA	#$20
-	JSR	PROC_DEVOPEN
+	JSR	OPEN_DEVICE		; Open Device for Read/Write
 	PLA
 	BEQ	CALL_SAVE
 	JSR	LAB_GETSTRPARM
@@ -7662,7 +7594,7 @@ CLEAR_BASE
 	
 ; 'BEEP' command **************************
 LAB_JC001
-	JMP 	(VEC_BEEP)		; Jump to Junior Computer standard BEEP routine
+	JMP 	(STDBEEP)		; Jump to Junior Computer standard BEEP routine
 
 ; perform BEEP ****************************
 LAB_BEEP
@@ -7688,44 +7620,44 @@ LAB_SYSBEEP
 LAB_PLIST
     	PHA				; save token
     	LDA	STDPRINTDEV		; get standard printer id
-	JSR	PROC_SETSTDOUTID	; and set it as standard output device
+	JSR	SET_STDOUTID		; and set it as standard output device
 	PLA				; restore token
 	JSR 	LAB_LIST		; call list command
 	LDA	STDOUTDEV		; get standard output device id
-	JSR	PROC_SETSTDOUTID	; and set it as standard output device
+	JSR	SET_STDOUTID		; and set it as standard output device
 	RTS
 
 ; perform HOME ****************************
 LAB_HOME
 	LDA	#CMD_HOME
-	JMP 	(VEC_CMD)		; Call Junior Computer standard HOME routine
+	JMP 	(STDCMD)		; Call Junior Computer standard HOME routine
 
 ; perform CLS *****************************
 LAB_CLS
 	LDA	#CMD_CLRSCRN
-	JMP 	(VEC_CMD)		; Call Junior Computer standard CLS routine
+	JMP 	(STDCMD)		; Call Junior Computer standard CLS routine
 
 ; perform NORMAL **************************
 LAB_NORMAL
 	LDA	#CMD_NORMAL
-	JMP 	(VEC_CMD)		; Call Junior Computer standard NORMAL routine
+	JMP 	(STDCMD)		; Call Junior Computer standard NORMAL routine
 
 ; perform INVERSE *************************
 LAB_INVERSE
 	LDA	#CMD_INVERSE
-	JMP 	(VEC_CMD)		; Call Junior Computer standard INVERSE routine
+	JMP 	(STDCMD)		; Call Junior Computer standard INVERSE routine
 
 ; perform FLASH ***************************
 LAB_FLASH
 	LDA	#CMD_FLASH
-	JMP 	(VEC_CMD)		; Call Junior Computer standard FLASH routine
+	JMP 	(STDCMD)		; Call Junior Computer standard FLASH routine
 	
 ; perform LOCATE **************************
 LAB_LOCATE
 	BEQ	LAB_SYNTAX_ERR		; if no following token, exit and throw syntax error
 	JSR	LAB_GET2BYTEPARMS	; get two byte parameters into X and Y
 	LDA	#CMD_SETCURSOR
-	JMP 	(VEC_CMD)		; Call Junior Computer standard SETCURSOR routine
+	JMP 	(STDCMD)		; Call Junior Computer standard SETCURSOR routine
 
 LAB_SYNTAX_ERR
 	JSR	LAB_SNER		; throw syntax error
@@ -7735,13 +7667,13 @@ LAB_SYNTAX_ERR
 LAB_INNUM
 	BEQ	LAB_SYNTAX_ERR		; if no following token, exit and throw syntax error
 	JSR	LAB_GETDEVID
-	JMP	PROC_SETSTDINID
+	JMP	SET_STDINID		; Set Standard In Routine ID
 
 ; perform PR# *****************************
 LAB_PRNUM
 	BEQ	LAB_SYNTAX_ERR		; if no following token, exit and throw syntax error
 	JSR	LAB_GETDEVID
-	JMP	PROC_SETSTDOUTID
+	JMP	SET_STDOUTID		; and set it as standard output device
 
 ; perform PORTIO **************************
 LAB_PORTIO
@@ -7769,12 +7701,12 @@ LAB_PORTOUT
 ; perform WRITEI2C ************************
 LAB_WRITEI2C
 	STA	Temp1			; save data byte to Temp1
-	JSR	PROC_I2C_START		; send start condition
+	JSR	I2C_START		; Send I2C Start Condition
 	TXA				; transfer device address into A
-	JSR	PROC_I2C_WRITE_DEV	; set write mode. C = 1 acknowleded
+	JSR	I2C_WRITE_DEV		; Write I2C Device, set write mode. C = 1 acknowledged
 	LDA	Temp1			; restore data byte to A
-	JSR	PROC_I2C_SEND		; send byte. C = 1 acknowleded
-	JSR	PROC_I2C_STOP		; send stop condition
+	JSR	I2C_SEND		; Send a Byte to I2C Device, C = 1 acknowledged
+	JSR	I2C_STOP		; Send I2C Stop Condition
 	RTS
 
 ; perform PORTIN **************************
@@ -7788,12 +7720,12 @@ LAB_PORTIN
 
 ; perform READI2C *************************
 LAB_READI2C
-	JSR	PROC_I2C_START		; send start condition
+	JSR	I2C_START		; Send I2C Start Condition
 	TXA				; transfer device address into A
-	JSR	PROC_I2C_READ_DEV	; set read mode. return C = 1 acknowleded
-	JSR	PROC_I2C_RCV		; receive byte 
+	JSR	I2C_READ_DEV		; Read I2C Device, set read mode. Return C = 1 acknowledged
+	JSR	 I2C_RCV		; Receive a Byte from I2C Device 
 	STA	Temp1
-	JSR	PROC_I2C_STOP		; send stop condition
+	JSR	I2C_STOP		; Send I2C Stop Condition
 	LDY	Temp1			; load byte to Y
 	JMP	LAB_1FD0		; convert Y to byte in FAC1 and return
 
@@ -7837,7 +7769,7 @@ LAB_DELAY_OLD
 	BEQ	LAB_DELAY_END
 LAB_SET_TIMER
 	LDA	FAC1_3
-	JSR	PROC_DELAY
+	JSR	DELAY			; Delay routine
 	LDA	#$FF
 	STA	FAC1_3
 	DEX
@@ -7867,10 +7799,8 @@ LAB_RES6
 ; system dependant i/o vectors
 ; these are in RAM and are set by the monitor at start-up
 
-V_INPT
-	JMP	(VEC_IN)		; non halting scan input device
-V_OUTP
-	JMP	(VEC_OUT)		; send byte to output device
+V_INPT	JMP	(STDIN)			; non halting scan input device vector (Junior Computer 2)
+V_OUTP	JMP	(STDOUT)		; send byte to output device vector (Junior Computer 2)
 
 ; The rest are tables messages and code for RAM
 
@@ -8967,8 +8897,3 @@ LAB_IMSG	.byte	' Extra ignored',$0D,$0A,$00
 LAB_REDO	.byte	' Redo from start',$0D,$0A,$00
 
 AA_end_basic
-
-		ORG $DFF0
-		.by 	'B(B)asic' 
-		.byte	$00,$00,$00,$00,$65,$22,$65,$22
-AA_end_ROM

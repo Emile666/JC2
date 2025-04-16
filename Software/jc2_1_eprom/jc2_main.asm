@@ -13,7 +13,12 @@
 		.byte	$FF			; Fill entire eprom
 		
 		ORG 	$B000       		; start address of BASIC
-		icl 	"jc2_basic.asm"
+RAM_TOP		icl 	"jc2_basic.asm"		; end of user RAM+1 (set as needed, should be page aligned)
+
+		ORG 	$DFF0
+LANGKEY		.byte	'B'
+LANGNAME 	.by	'(B)asic' 
+		.byte	$00,$00,$00,$00,$65,$22,$65,$22
 
 		ORG 	$E000       		; start address of BIOS
 		icl 	"jc2_bios.asm"
