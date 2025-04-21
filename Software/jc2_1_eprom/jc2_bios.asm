@@ -31,12 +31,12 @@
 MON_COLD_START	JMP  	MAINSTART	; jump to monitor cold start
 MON_WARM_START	JMP	MONINP		; jump to monitor warm start
 
-; **** Switch To RAM Page (B000..DFFF) *****************************************
+; **** Switch BASIC To RAM Page (B000..DFFF) ***********************************
 ; ******************************************************************************
 SWITCH_TO_RAM	LDY	#$20		; load index to RAM annunciator
 		BNE	SWITCH		; branch always
 
-; **** Switch To ROM Page (B000..DFFF) *****************************************
+; **** Switch BASIC To ROM Page (B000..DFFF) ***********************************
 ; ******************************************************************************
 SWITCH_TO_ROM	LDY	#$30		; load index to ROM annunciator
 SWITCH		LDA	(IOBASE),Y	; trigger annunciator address
@@ -229,17 +229,17 @@ DEC2STR		LDX	#48
 		STX	DIG0		; initialize digit counter 0 to '0'
 		STX	DIG1		; initialize digit counter 1 to '0'
 		STX	DIG2		; initialize digit counter 2 to '0'
-GETDIG2	CMP	#100			; is A >= 100?
+GETDIG2		CMP	#100		; is A >= 100?
 		BCC	GETDIG1		; no, convert next digit
 		SBC	#100		; yes, subract 100 from A
 		INC	DIG2		; and increment digit counter 2
 		BNE	GETDIG2		; branch always
-GETDIG1	CMP	#10			; is A >= 10?
+GETDIG1		CMP	#10		; is A >= 10?
 		BCC	GETDIG0		; no, convert next digit
 		SBC	#10		; yes, subract 10 from A
 		INC	DIG1		; and increment digit counter 1
 		BNE	GETDIG1		; branch always
-GETDIG0	ADC	DIG0			; add digit counter 0 to remainder in A
+GETDIG0		ADC	DIG0		; add digit counter 0 to remainder in A
 		STA	DIG0		; and store it back to digit counter 0
 		RTS
 
@@ -1216,10 +1216,11 @@ MAIN		JSR	CGET		; clear input buffer
 		JSR  	TAB		; send some space chars to center title
         	LDY  	#TITLE-STRINGP 	; load title string
 		JSR  	WRSTR		; and write it
-		JSR     WRITE_IO_INFO
+		JSR     INIT_CFC	; init. CFC-driver
 
 CHK_IO_CARD     LDA	IOBASEH		; language card available?
-		BEQ	SHOWMON		; no, just start monitor
+		BEQ	TRY_BOOT	; no, try to boot from CF-device
+		
 		LDY	#IOCARD-STRINGP ; load detect message
 		JSR	WRSTR		; and write it
 		LDA	IOBASEH
@@ -1229,15 +1230,21 @@ CHK_IO_CARD     LDA	IOBASEH		; language card available?
 		LDA	STDINDEV
 		CMP	#KEYBD1_ID	; is ASCII keyboard the standard input device?
 		BNE	SHOW_CLOCK 	; no, show clock
+		
 		LDY	#KBDSTR-STRINGP	; yes, load detect message
 		JSR	WRSTR		; and write it
 		JSR	SETPPORTIN
 SHOW_CLOCK	JSR	CLOCKSTART	; call clock
 
-                JSR     SYS_BOOT        ; try to boot from storage device
+TRY_BOOT        JSR     SYS_BOOT        ; try to boot from CF or SD device
                 BCC     NO_BOOT_DEV     ; no boot device found, show menu
-                JMP     BLOCK_BUF       ; jump to boot code
-NO_BOOT_DEV     LDA	#$00
+		
+                JMP     BLOCK_BUF       ; jump to boot code in Volume-ID with C=1
+
+NO_BOOT_DEV     LDA	IOBASEH		; language card available?
+		BEQ	SHOWMON		; no, just start monitor
+
+		LDA	#$00
                 LDY	#ACR		; select auxilary control register
 		STA	(IOBASE),Y	; disable shift operation
                 JSR     LOADSTRING
@@ -1247,11 +1254,9 @@ NO_BOOT_DEV     LDA	#$00
 		JSR  	TAB
 		LDY	#MENU-STRINGP   ; load menu string
 		JSR	WRSTR		; and write it
-		LDA	#< LANGNAME	; load language name
-		STA	PSTRL
-		LDA	#> LANGNAME
-		STA	PSTRH
-		JSR	STROUT		; and write it
+		LDX	#< LANGNAME	; load language name
+		LDY	#> LANGNAME
+		JSR	SPRINT		; and write it
 		LDA	#SPC
 		JSR	COUT
 		LDA	#'?'
@@ -1260,9 +1265,11 @@ MLOOP		JSR  	CIN		; main menu loop
         	AND  	#$DF		; convert the input to uppercase char
         	CMP  	#'M'		; (M)onitor choosen?
 		BNE	MNEXT1
+
 STARTMON	JMP  	MONITOR		; yes, start monitor
 MNEXT1		CMP	LANGKEY		; compare with language key char
 		BNE	MNEXT
+
 		JSR  	CLRSCRN    	; clear screen
 		JMP	$B000		; jump to language start
 MNEXT		JMP  	MLOOP		; no valid input choosen, try again
@@ -1276,6 +1283,7 @@ LOADSTRING	LDA  	#< STRINGP 	; load string pointer 1
 		LDA  	#> STRINGP
 		STA  	PSTRH
 		RTS
+		
 LOADSTRING2	LDA  	#< STRINGP2 	; load string pointer 2
 		STA  	PSTRL
 		LDA  	#> STRINGP2
@@ -1290,6 +1298,7 @@ CHK_IO_0	LDA     FGCBASEH        ; controller card 0 available?
 		JSR     CALL_INFO
 CHK_IO_1        LDA     CARD3BASEH      ; controller card 1 available?
                 BEQ     IO_INFO_END     ; no, exit
+		
                 STA     IO_INFO+1
 		JSR     CALL_INFO
 IO_INFO_END	RTS
@@ -1416,7 +1425,6 @@ EXECPROG	JMP  	(ADRL)     	; jump to program address; execute program
 ; **** Start Of Hex Monitor ****************************************************
 
 ; ******************************************************************************
-
 MONITOR 	JSR  	CLRLOADSTR    	; clear screen and load pointer to string table
 		LDY  	#MONSTR-STRINGP
         	JSR  	WRSTR		; show monitor title
@@ -1591,7 +1599,6 @@ CMPADDR		LDA  	ADRL       	; see if there's more to print
 ; Jump to original Junior Computer reset vector ********************************
 
 ;*******************************************************************************
-
 JCRESET		LDA	#$06			; set PB5 = L (WRITE)
 		STA	PBD
 		SEI
@@ -1604,85 +1611,49 @@ JCRESET		LDA	#$06			; set PB5 = L (WRITE)
 ; String Data Section
 ; ******************************************************************************
 
-MAGIC0		.byte	$65,$22,$65,$22                 ; Magic number of IO-Card
-MAGIC1          .byte      $18,$90,$00,$90                 ; clc bcc 00 bcc
+MAGIC0		.byte	$65, $22, $65, $22              ; Magic number of IO-Card
+MAGIC1          .byte   $18, $90, $00, $90              ; clc bcc 00 bcc
 
 PSSTR		.by	'PSAYX'				; processor status string
 
 STRINGP							; *** string base pointer ***
+ESCCLS  	.byte   $32,$4A,$1B,$5B                 ; VT100 clear screen sequence
+ESCHOME        	.byte   $48,$00                 	; VT100 cursor home sequence
+ESCCLL        	.byte   $32,$4B,$00         		; VT100 clear line sequence
+ESCGID		.byte   $30,$63,$00	        	; VT100 get ID sequence
+ESCNORM		.byte   $6D,$00	        		; VT100 set normal text mode
+ESCINV		.byte   $37,$6D,$00	        	; VT100 set inverse text mode
+ESCBLNK		.byte   $35,$6D,$00	        	; VT100 set blinking text mode
 
-ESCCLS  	.byte     	$32,$4A,$1B,$5B                 ; VT100 clear screen sequence
-ESCHOME        	.byte     	$48,$00                 	; VT100 cursor home sequence
-ESCCLL        	.byte     	$32,$4B,$00         		; VT100 clear line sequence
-ESCGID		.byte     	$30,$63,$00	        	; VT100 get ID sequence
-ESCNORM		.byte     	$6D,$00	        		; VT100 set normal text mode
-ESCINV		.byte     	$37,$6D,$00	        	; VT100 set inverse text mode
-ESCBLNK		.byte     	$35,$6D,$00	        	; VT100 set blinking text mode
-
-TITLE		.by   	'Junior Computer ]['
-        	.byte     	CR,CR,CR
+TITLE		.by   	'Junior Computer ][' CR,CR,CR
 		.by   	' BIOS Version '
-        	.byte     	VERMAIN,$2E,VERPSUB,$2E,VERSSUB,CR
-        	.by   	' 2020/24 by Joerg Walke'
-		.byte     	CR,CR,$00
-IOCARD		.by	' IO/Language-Card at $'
-		.byte	$00
-KBDSTR		.byte	CR
-		.by	' ASCII Keyboard connected'
-		.byte	$00
-SPACE    	.byte     	CR,CR,CR,CR,$00
-MENU		.by   	'(M)onitor  '
-        	.byte     	$00
-MONSTR		.byte	CR
-		.by   	'Hex Monitor'
-		.byte     	CR,$00
+        	.byte   VERMAIN,$2E,VERPSUB,$2E,VERSSUB,CR
+        	.by   	' 2020/25 by Joerg Walke' CR CR $00
+IOCARD		.by	' IO/Language-Card at $' $00
+KBDSTR		.by	CR ' ASCII Keyboard connected' $00
+SPACE    	.byte  	CR, CR, CR, CR, $00
+MENU		.by   	'(M)onitor  ' $00
+MONSTR		.by	CR 'Hex Monitor' CR $00
 
-DT_NOT_SET	.byte	13,13
-		.by	' Date/Time not set'
-		.byte	13,0
-DATEINPUT	.byte	13
-		.by	' Date: '
-		.by	'DD'
-		.byte	DATEDIV
-		.by	'MM'
-		.byte	DATEDIV
-		.by	'YY'
-		.byte	8,8,8,8,8,8,8,8,0
-TIMEINPUT	.byte	13
-		.by	' Time: '
-		.by	'HH'
-		.byte	TIMEDIV
-		.by	'MM'
-		.byte	TIMEDIV
-		.by	'SS'
-		.byte	8,8,8,8,8,8,8,8,0
+DT_NOT_SET	.by	CR CR ' Date/Time not set' CR $00
+DATEINPUT	.by	CR ' Date: DD' DATEDIV 'MM' DATEDIV 'YY'
+		.byte	8, 8, 8, 8, 8, 8, 8, 8, $00
+TIMEINPUT	.by	CR ' Time: HH' TIMEDIV 'MM' TIMEDIV 'SS'
+		.byte	8, 8, 8, 8, 8, 8, 8, 8, $00
 
 STRINGP2
-
-DAYS		.by	'MON'
-		.byte	0
-		.by	'TUE'
-		.byte	0
-		.by	'WED'
-		.byte	0
-		.by	'THU'
-		.byte	0
-		.by	'FRI'
-		.byte	0
-		.by	'SAT'
-		.byte	0
-		.by	'SUN'
-		.byte	0
-
+DAYS		.by	'Mon' $00
+		.by	'Tue' $00
+		.by	'Wed' $00
+		.by	'Thu' $00
+		.by	'Fri' $00
+		.by	'Sat' $00
+		.by	'Sun' $00
 OSID            .by    'JCOS'
-BOOTDEV         .byte      CR
-                .by    ' Booting from '
-                .byte      0
-NOBOOTDEV       .byte      CR
-                .by    ' No Boot Disk found'
-                .byte      0
-SDCDEV          .by    'SDC1'
-                .byte      0
+BOOTDEV         .by    CR ' Booting from ' $00
+NOBOOTDEV       .by    CR ' No Boot Disk ' $00
+CFCDEV          .by    'CFC1' $00
+SDCDEV          .by    'SDC1' $00
 
 ; ******************************************************************************
 ; START OF DISASSEMBLER
@@ -2183,7 +2154,9 @@ DETECT_LOOP     CLC
                 STA     ADRH            ; set high byte to init routine
                 LDY	#$03            ; test byte string in card ROM against magic number
 COMP_LOOP	LDA	MAGIC1,Y        ; get one byte of magic number
-		CMP	(ADRL),Y        ; and compare it with ROM content
+		;CMP	(ADRL),Y        ; and compare it with ROM content
+		NOP			; Keep addresses the same as for v1.1.4
+		NOP
 		BNE	NO_MATCH        ; byte does not match, exit inner detection loop
 		DEY                     ; byte matched magic number, try next one
 		BPL	COMP_LOOP       ; more bytes to compare?
@@ -2198,26 +2171,30 @@ NO_MATCH        DEC     PDBCNT
 
 DETECT_IOL_CARD	LDA	#$00
 		STA	IOBASEL		; set low byte of IO base pointer to $00
+		LDA	#$08		; try 1st IO-card at $0800
 		STA	IOBASEH		; set high byte of IO base pointer to $00
-		LDA	K4+$20		; walk through all IO spaces
-		LDA	K3+$20		; and trigger annunciator address
-		LDA	K2+$20		; to initially switch from ROM to RAM
-K4?		LDY	#$10
-		LDA	K4+$30		; try switching to ROM at base address $1000.
-		JSR	GETMAGIC	; get magic number?
-		BEQ	STOREBASE	; yes, store base address.
-K3?		LDY	#$0C		; no,
-		LDA	K3+$30		; try switching to ROM at base address $0C00.
-		JSR	GETMAGIC	; get magic number?
-		BEQ	STOREBASE	; yes, store base address.
-K2?		LDY	#$08		; no,
-		LDA	K2+$30		; try switching to ROM at base address $0800.
-		JSR	GETMAGIC	; get magic number?
-		BEQ	STOREBASE	; yes, initialize IO card
+		
+DETECT_LP	LDY	#DDRB		; input & output regs are the same
+		STA	(IOBASE),Y
+		NOP
+		CMP	(IOBASE),Y	; Match only if 6522 VIA is present
+		BEQ	STOREBASE	; branch if a card is found
+		
+		CLC
+		ADC	#4		; next IO base-address
+		STA	IOBASEH		; next card-address
+		CMP	#$14
+		BCC	DETECT_LP	; branch if MSB base-address < $14
+		
+		LDA	#0
+		STA	IOBASEH		; 0 = no card found
 NOCARD          RTS                     ; no card found
 
-STOREBASE	STY	IOBASEH		; card found, set high byte of base pointer.
-
+		ORG	$ECFC		; maintain compatibility with v1.1.4
+		
+STOREBASE	STA	IOBASEH		; card found, set high byte of base pointer.
+		JSR	HEXOUT		; DEBUG!
+		
 ; **** Initialize The IO/Language Card *****************************************
 
 ; ******************************************************************************
@@ -3584,7 +3561,7 @@ SD_RD_LBLK_BUF	JSR	INIT_BLKBUF		; set pointer to block buffer
 ;	  A = Error Code
 ; ******************************************************************************
 
-SD_RD_LBLK	JSR	LOAD_LBA		; convert LBA CMD ADR
+SD_RD_LBLK	JSR	LOAD_LBA_SD		; convert LBA CMD ADR
 						; fall through to sd_rd_blk
 
 ; ******************************************************************************
@@ -3648,7 +3625,7 @@ SD_WR_LBLK_BUF	JSR	INIT_BLKBUF		; set pointer to block buffer
 ;	  A = Error Code
 ; ******************************************************************************
 
-SD_WR_LBLK	JSR	LOAD_LBA		; convert LBA CMD ADR
+SD_WR_LBLK	JSR	LOAD_LBA_SD		; convert LBA CMD ADR
 						; fall through to sd_rd_blk
 
 ; ******************************************************************************
@@ -3772,11 +3749,25 @@ SD_END		RTS
 ; **** SD-Card Boot Routine ****************************************************
 ;
 ; ******************************************************************************
-
 SD_BOOT         JSR	SD_CLEAR_CMD
 		JSR	SD_RD_BLK_BUF           ; read MBR
                 BCC     SD_END                  ; error reading MBR. Exit
-                JSR     SYS_MBR_ID              ; check boot block ID tag
+
+		JSR	LOAD_RUN_PART		; Load MBR and Volume ID
+		BCC	SD_END			; branch if error
+		
+		LDY     #SDCDEV-STRINGP2        ; load pointer to device name
+                JMP	DISP_DVC		; display device-name and return
+	
+;----------------------------------------------------------------------------------		
+; This routine is the same for both the CF and SD cards. It does the following:
+; - Load the MBR (sector 0) and does check for $55 $AA and $65 $02
+; - It runs the boot-menu routine in the MBR
+; - It loads the begin-LBA of the selected partition
+; - It loads the Volume ID (first sector) of the partition
+; Exit: C=0: Error, C=1: OK
+;----------------------------------------------------------------------------------		
+LOAD_RUN_PART   JSR     SYS_MBR_ID              ; check boot block ID tag
                 BCC     SD_END                  ; error, wrong ID. Exit
                 LDA     PART0-2                 ; check if partition ID1 is $65
                 CMP     #$65
@@ -3787,7 +3778,7 @@ SD_BOOT         JSR	SD_CLEAR_CMD
                 JSR     MBR                     ; partition ID $65 $02 found. Call MBR code
                 BNE     LOAD_PART1              ; is boot menu result 1,2,3, or 4 ?
                 CLC                             ; no, ESC pressed or no valid partition found
-                RTS                             ; abort booting from SD-Card
+LRP_END         RTS                             ; abort booting from SD-Card
 
 LOAD_PART1      DEX                             ; set result to 0,1,2 or 3
                 TXA                             ; transfer result to Accu
@@ -3814,23 +3805,24 @@ SD_BOOT1        LDA     PART0_RS,X              ; load partition start and lengt
                 DEX
                 DEY
                 BPL     SD_BOOT1
-                LDX	#<  BOOT_PART         ; read partition boot blk ptr
+                LDX	#< BOOT_PART            ; read partition boot blk ptr
 		LDY	#> BOOT_PART
 		JSR     SYS_LD_BOOTBLK          ; load partition boot block
-                BCC     SD_END                  ; block not found. Exit
-                JSR     SYS_CHECK_OS            ; check OS OEM string
-                BCC     SD_END                  ; wrong OEM string. Exit
-                LDY     #SDCDEV-STRINGP2        ; load pointer to device name
-                JSR     SYS_MSG                 ; print device name to screen
-                LDA     #'_'
-                JSR     COUT
-                LDA     PSAV                    ; add partition number to name (_1.._4)
-                JSR     COUT
-                SEC                             ; normal boot, set carry flag
-                RTS
+                BCC     LRP_END                 ; block not found. Exit
+                JMP     SYS_CHECK_OS            ; check OS OEM string C=0: wrong OEM string. And return
+		
+;----------------------------------------------------------------------------
+; This routine prints a string to the terminal: A=LSB, Y=MSB
+;----------------------------------------------------------------------------
+SPRINT		STX 	PRSTR	    		; LSB of text-pointer
+		STY 	PRSTR+1	    		; MSB of text-pointer
+		JMP 	SPROUT	    		; print string routine
 
+		NOP				; Maintain address compatibility with v1.1.4
+		NOP	
+		
 ; ******************************************************************************
-; Initialize Block Buffer Pointer
+; Initialize Block Buffer Pointer, it must return with A = 0.
 ; ******************************************************************************
 
 INIT_BLKBUF	LDA	#> BLOCK_BUF         ; set pointer to standard block buffer
@@ -3840,13 +3832,13 @@ INIT_BLKBUF	LDA	#> BLOCK_BUF         ; set pointer to standard block buffer
 		RTS
 
 ; ******************************************************************************
-; Load Logical Block Address into Command Address.
+; Load Logical Block Address into SD-card Command Address.
 ; Swap Endian and Shift Bits if Desired
 ; Input:  X,Y = Ptr[LO:HI] to 32 Bit LBA Address
 ; Output: ADR in SD_PB3..SD_PB0
 ; ******************************************************************************
 
-LOAD_LBA	STX	PLBAL
+LOAD_LBA_SD	STX	PLBAL
 		STY	PLBAH
 		LDX	#$04
 		LDY	#$00
@@ -4218,19 +4210,152 @@ COM_SETENDADR	CMP	#CMD_SETENDADR
 		RTS
 
 ; EMPTY Command Handler ********************************************************
-
 _EMPTY_         CLC
 _HANDLER_       RTS
 
 ; Command Handler For Floppy Drive 2 *******************************************
-
 FGC_FDC_CMD2    ORA     #$80            ; set bit 7 of command byte (drive 2 operation)
                 JMP     FGC_FDC_CMD     ; call command handler
 
-; **** VPU IRQ Routine *********************************************************
+;----------------------------------------------------------------------------
+; This routine contains the entry routines for the CF-card routines
+;----------------------------------------------------------------------------
+CFC_CMD         CMP     #CMD_INIT
+                BNE     CFC_READ
+                JMP     CF_INIT		; Init. CF-card with HW-reset
+CFC_READ        CMP     #CMD_READ
+                BNE     CFC_WRITE
+                JMP     CF_RD_LBLK	; used a lot in boot.sys and mkboot.sys
+CFC_WRITE       CMP     #CMD_WRITE
+                BNE     CFC_RD_BUF
+                JMP     CF_WR_LBLK
+CFC_RD_BUF      CMP     #CMD_READ_BUF
+                BNE     CFC_WR_BUF
+                JMP     CF_RD_LBLK_BUF
+CFC_WR_BUF      CMP     #CMD_WRITE_BUF
+                BNE     CFC_BOOT
+                JMP     CF_WR_LBLK_BUF
+CFC_BOOT        CMP     #CMD_BOOT
+                BNE     _EMPTY_
+                JMP     CF_BOOT
 
 ; ******************************************************************************
+; CF-Card Driver Routines
+; ******************************************************************************
+;----------------------------------------------------------------------------
+; Command: CMD_INIT, Initialize CF-Card
+; Output : C = 1 Init OK, C = 0 Error
+;----------------------------------------------------------------------------
+CF_INIT		LDA #$00		; Reset command
+                STA CFREG8		; HW reset command
+		LDA #1
+		STA RSTACT		; 1 = Reset pending
+		JSR CFWAIT
+		BCS INITOK		; branch if CF-card init OK
+		
+CF_ERR		LDA #$80
+		RTS			; return if error (C=0)
+		
+INITOK		LDA #$E0		; LBA3=0, Master, Mode=LBA
+		STA CFREG6
+		LDA #$01		; 8-bit transfers
+		STA CFREG1
+		LDA #$EF		; Set feature command
+		STA CFREG7		; CF command register
+		JSR CFWAIT		; Wait and return
+		BCC CF_ERR		; branch if Error
+		
+		JMP CF_INFO		; Print CF-Card Info, returns with C=1 (OK) and return
 
+;----------------------------------------------------------------------------
+; This routine waits until the CF-card is ready.
+;----------------------------------------------------------------------------
+CFWAIT		LDA #0
+		STA MSEC		; msec counter
+CFWLP		LDA RSTACT		; 1 = Reset pending
+		BEQ NO_DLY10		; branch if no 10 msec. delay needed
+		
+		LDA #10			; delay = 10 msec.
+		JSR DELAY		; delay 10 msec.
+NO_DLY10	INC MSEC		; msec-counter
+		LDA MSEC
+		BEQ CFWLPTO		; branch after 2550 msec. and no reset
+		
+		LDA CFREG7		; read status register
+		AND #$80		; check busy flag
+		BNE CFWLP		; branch if BSY flag is still set
+		
+		; Busy flag cleared
+		LDA CFREG7		; read status register
+		AND #$50		; check for RDY and DSC flags
+		CMP #$50		; BSY and DSC flags both set?
+		BNE CFWLP		; branch if RDY and DSC not both set
+
+		LDA RSTACT		; 1 = Reset pending
+		BEQ PRENDOK		; branch if no Reset pending
+		
+		LDA #0
+		STA RSTACT		; Reset no longer pending
+		LDX #<TXT_RSTOK     	; Print Reset OK + msec
+		LDY #>TXT_RSTOK
+		JSR SPRINT	    	; print
+		LDA MSEC		; #msec. * 10
+		JSR NUMOUT		; Print decimal number
+		LDX #<TXT_MSEC     	; Print msec
+		LDY #>TXT_MSEC
+		JSR SPRINT	    	; print
+PRENDOK		SEC			; C=1, no error
+		RTS			; return if BSY=0 and RDY=DSC=1
+	
+CFWLPTO		LDX #<TXT_HWERR     	; Print HW error
+		LDY #>TXT_HWERR
+		JSR SPRINT	    	; print		
+		LDA CFREG7		; Status register
+		JSR HEXOUT		; Print and return
+		CLC			; C=0, error
+CF_END		RTS			; return
+
+;-------------------------------------------------------------------------------
+; CF-Card Boot Routine
+;-------------------------------------------------------------------------------
+CF_BOOT         JSR	INIT_LBA		; CFLBA0..CFLBA3 = 0 (MBR) and load into CF-card
+		JSR	CF_RD_BLK_BUF		; Read MBR and store in BLOCK_BUF ($0600)
+		BCC     CF_END                  ; error reading MBR. Exit
+		
+		JSR	LOAD_RUN_PART		; Load MBR and Volume ID
+		BCC	CF_END			; branch if error
+		
+		LDY     #CFCDEV-STRINGP2        ; load pointer to device name
+                JMP	DISP_DVC		; display device-name and return
+
+;-------------------------------------------------------------------------------
+; Init CFC-card, this is called from within MAIN loop.
+; The first instruction comes from the beginning of the MAIN routine and 
+; ensures that addresses do not change in a new firmware version
+;-------------------------------------------------------------------------------
+INIT_CFC	JSR     WRITE_IO_INFO		; instruction from MAIN routine
+		JSR	CHECK_ROM		; Check ROM checksum
+		LDX     #<CFC_DEV
+                LDY     #>CFC_DEV
+                JMP     DEV_ADD         	; add CF-card driver and return
+
+;----------------------------------------------------------------------------------		
+; This routine is the same for both the CF and SD cards. It displays the device ID
+;----------------------------------------------------------------------------------		
+DISP_DVC        JSR     SYS_MSG                 ; print device name to screen
+                LDA     #'_'
+                JSR     COUT
+                LDA     PSAV                    ; add partition number to name (_1.._4)
+                JSR     COUT
+                SEC                             ; normal boot, set carry flag
+                RTS
+
+TXT_RSTOK       .by     CR ' CF Reset: ' $00
+TXT_MSEC	.by	'0 msec.' CR $00
+TXT_HWERR       .by     'No CF Reset, Status=$' $00
+
+; **** VPU IRQ Routine *********************************************************
+; ******************************************************************************
                 ORG     $F960
 
 VPU_IRQ         PHA
@@ -4275,9 +4400,9 @@ KEYBD_DEV       .byte	KEYBD1_ID, $00   ; ASCII Keyboard Driver Descriptor
 		.word	_EMPTY_
 
 VDP_DEV         .byte	VDP1_ID, $00     ; Video Display Processor Driver Descriptor
-		.word      PS2KBD
-                .word      FGC_VPU_OUT
-		.word      FGC_VPU_CMD
+		.word   PS2KBD
+                .word   FGC_VPU_OUT
+		.word   FGC_VPU_CMD
 
 XMODEM_DEV	.byte	XMODEM1_ID, $00  ; XModem Device Driver Descriptor
 		.word	SERIALIN
@@ -4292,17 +4417,22 @@ TAPE_DEV	.byte	TAPE1_ID, $00    ; Tape Device Driver Descriptor
 SDC_DEV	        .byte	SDC1_ID, $00     ; SD-Card Driver Descriptor
 		.word	_EMPTY_
 		.word	_EMPTY_
-		.word      SDC_CMD
+		.word   SDC_CMD
 
 FDD1_DEV	.byte	FDD1_ID, $00     ; Floppy Disk Drive 1 Driver Descriptor
 		.word	_EMPTY_
 		.word	_EMPTY_
-		.word      FGC_FDC_CMD
+		.word   FGC_FDC_CMD
 
 FDD2_DEV	.byte	FDD2_ID, $00     ; Floppy Disk Drive 2 Driver Descriptor
 		.word	_EMPTY_
 		.word	_EMPTY_
-		.word      FGC_FDC_CMD2
+		.word   FGC_FDC_CMD2
+
+CFC_DEV	        .byte	HDD1_ID, $00     ; CF-Card Driver Descriptor
+		.word	_EMPTY_
+		.word	_EMPTY_
+		.word   CFC_CMD		 ; CF-card driver descriptor
 
 ; ******************************************************************************
 ; Low Byte CRC Lookup Table (XMODEM)

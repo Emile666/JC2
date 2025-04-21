@@ -28,5 +28,9 @@ Software projects are written in 6502 assembly language and are assembled with t
 
 - [Memory-test](./Software/memtest): The memory-test program scans the hardware present and detects if a MMU is present. It shows and tests all available RAM and ROM memory, displays the number of RAM-banks found and tests each one of them.
 - [Monitor](./Software/jc2_mon_1K): This is the original monitor program written by A. Nachtmann (1980), which was restored and adapted for TASM by A.J. Prosman (2019). I adapted the source for MADS (2024). Included here for reference.
+- [JC2-DOS65](./Software/jc2_dos65): Joerg made a v0.2.0 version that supported the SD-card. This version here is a further development and now supports the CF-IDE Interface.
+- [JC2-1-EPROM](./Software/jc2_1_eprom): This software integrates BASIC, BIOS and Monitor ROM into a single EPROM version. It already includes the CF-IDE drivers and is supported by a RAM-loader for testing without directly creating a new EPROM version.
+
+
 
 

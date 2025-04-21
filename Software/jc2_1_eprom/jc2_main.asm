@@ -9,16 +9,18 @@
 
         	icl 	"jc2_defines.inc"  	; all address defines for the JC-II
 
-		ORG	$8000
-		.byte	$FF			; Fill entire eprom
+		;ORG	$8000
+		;.byte	$FF			; Fill entire eprom
 		
 		ORG 	$B000       		; start address of BASIC
 RAM_TOP		icl 	"jc2_basic.asm"		; end of user RAM+1 (set as needed, should be page aligned)
-
+		icl	"jc2_cf_ide.asm"	; cf-ide driver to be placed in free BASIC ROM area
+		
 		ORG 	$DFF0
 LANGKEY		.byte	'B'
-LANGNAME 	.by	'(B)asic' 
-		.byte	$00,$00,$00,$00,$65,$22,$65,$22
+LANGNAME 	.by	'(B)asic' $00
+ROM_CS16	.word	$0000			; 12K ROM checksum, to be filled in by jc2_csum.exe
+		.byte	$00,$65,$22,$65,$22
 
 		ORG 	$E000       		; start address of BIOS
 		icl 	"jc2_bios.asm"
@@ -30,7 +32,7 @@ MONITOR_BLOCK	.local, $1C00
 		icl 	"jc2_mon.asm"
 ;----------------------------------------------------------------------------
 MONITOR_END	
-.endl
+		.endl
 ;----------------------------------------------------------------------------
 
 		ORG	$FFFA

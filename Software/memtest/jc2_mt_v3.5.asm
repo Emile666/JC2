@@ -445,7 +445,7 @@ PIA_DET2	PLA		   	; restore previous value
 		; CRB bit 2 = 1 => PIA present
 		; CRB bit 2 = 0 => MMU-register present
 		LDA CRB			; PIA CRB register (or MMU-register)
-		ORA #4			; test bit 2
+		AND #4			; test bit 2
 		BEQ MMU_REG		; branch if no PIA present
 		
 		LDA #$80		; $80 = PIA present
@@ -504,17 +504,21 @@ RAMB_LP1	LDA RAMB_TABLE,X   	; get value for PORTB
 		STA PORTB
 		
 		; Load the value in the main RAM-bank again.
-		; 25=none, 21=4 banks (64K), 13=12 banks, 0 = 28 banks
+		; 27=none, 23=4 banks (64K), 15=12 banks, 0 = 28 banks
 		LDA $4000 	   
 		BNE RAMB_LP2
 		
 		LDA #28		   	; 28 RAM-banks found
 		BNE RAMB_DONE		; branch always
 		
-RAMB_LP2	LDA #25
+RAMB_LP2	LDA #27
 		SEC
-		SBC $4000
-RAMB_DONE	STA MMU_BANKS	    	; A = 25-X	
+		SBC $4000               ; A = 27-X
+RAMB_DONE	CMP #29			; safety check
+		BCC MMU_OK		; branch if A < 29
+		
+		LDA #0			; error, set MMU_BANKS to 0
+MMU_OK		STA MMU_BANKS	    		
 		RTS
 
 ;----------------------------------------------------------------------------
@@ -946,7 +950,7 @@ TBL_MAX = (*-RAM_TABLE)/TBL1_SZ
 RAM_TABLE_B0	.byte TROM, $B0, $B0    ; $B000 - $DFFF, BASIC ROM
 		.word TXT_USER_RAM  	
 
-TXT_TITLE	.by     'JC ][ Memory-Tester (ROM/RAM) v0.34 by Emile' CR
+TXT_TITLE	.by     'JC ][ Memory-Tester (ROM/RAM) v0.35 by Emile' CR
 		.by     'CPU-type     : ' $00
 TXT0		.byte	$00
 TXT1		.by 	'Block $' $00

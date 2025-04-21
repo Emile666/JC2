@@ -11,6 +11,11 @@ PIA_PORTB       EQU     $0D             ; Port B input/output register
 PIA_PORTC       EQU     $0E             ; Port C input/output register
 PIA_CONTROL     EQU     $0F             ; Control/Setup register
 
+; Memory Management Unit (MMU) Register Indices ********************************
+BIOS_EN		EQU	$01		; PORTB bit 0: 1 = enable BIOS at $E000
+MON_EN		EQU	$02		; PORTB bit 1: 1 = enable Monitor at $1C00
+BAS_EN		EQU	$80		; PORTB bit 7: 1 = enable BASIC at $B000
+
 ; VIA 1 Register Indices *******************************************************
 VIA_PORTB     	EQU  	$00  		; Port B input/output register
 VIA_PORTA     	EQU  	$01  		; Port A input/output register
@@ -132,6 +137,20 @@ ACMD41		EQU	CMD0 + 41	; Initialize SDC
 
 DATA_TOKEN	EQU	$FE             ; SD-Card Data Token
 
+;----------------------------------------------------------------------------
+; CF-IDE Hardware Registers
+;----------------------------------------------------------------------------
+CFBASE		EQU 	$0C80		; Base card-address for CF-IDE card
+CFREG0		EQU	CFBASE+0	; Data port
+CFREG1		EQU	CFBASE+1	; Read: error-code, write: feature
+CFREG2		EQU	CFBASE+2	; Number of sectors to transfer
+CFREG3		EQU	CFBASE+3	; Sector address LBA 0 [0:7] (LSB)
+CFREG4		EQU	CFBASE+4	; Sector address LBA 1 [8:15]
+CFREG5		EQU	CFBASE+5	; Sector address LBA 2 [16:23]
+CFREG6		EQU	CFBASE+6	; Sector address LBA 3 [24:27] (MSB)
+CFREG7		EQU	CFBASE+7	; Read: Status, Write: Command
+CFREG8		EQU	CFBASE+8	; A write with 0x00 is a HW reset
+
 ; Block Device Constants *******************************************************
 MOUNT_TABLE     EQU     $0400           ; Table of mounted devices
 BOOT_PART       EQU     MOUNT_TABLE     ; Boot Medium Descriptor
@@ -182,7 +201,17 @@ CARD3BASEH	EQU	$19		;K2 = $08, K3 = $0C, K4 = $10
 ;-----------------------------------------------------------------------------
 ; Addresses up to $98 are in use by BASIC, see jc2_basic.asm
 ;-----------------------------------------------------------------------------
-
+PRSTR		EQU	$CC		; 2-bytes replacement for PSTR
+ROM_PTR		EQU	$CE		; ROM pointer (2 bytes)
+ROM_CS		EQU	$D0		; ROM checksum counter (2 bytes)
+CFLBA0          EQU     $D2		; CF-card LBA 0 [0:7]
+CFLBA1          EQU     $D3		; CF-card LBA 1 [8:15]
+CFLBA2          EQU     $D4		; CF-card LBA 2 [16:23]
+CFLBA3          EQU     $D5		; CF-card LBA 3 [24:27]
+MSEC		EQU	$D6		; msec time-out counter
+RSTACT		EQU	$D7		; 1 = Reset Pending
+SAVEX		EQU 	$D8		; Temp. save X register
+SAVEY		EQU	$D9		; Temp. save Y register
 TICKCNT         EQU     $DA             ; current tick counter
 SD_TYPE		EQU	$DB		; SD Card Type: $00 Byte mode, $40 LBA mode
 BLKBUF		EQU	$DC             ; pointer to block buffer
@@ -289,6 +318,9 @@ STAT_REG  	EQU   	$1601    	; ACIA Status Register
 COMM_REG  	EQU   	$1602    	; ACIA Command Register
 CTRL_REG  	EQU   	$1603    	; ACIA Control Register
 
+; ATF1504 Memory Management Unit (MMU) Register ********************************
+MMU		EQU	$1700		; MMU Register
+
 ; RIOT RAM Area ****************************************************************
 IO_INFO         EQU     $1A00           ; Initialization info call for IO card
 
@@ -330,4 +362,35 @@ CNTC	  	EQU	$1A96	 	; CLK/64T no interrupt
 CNTD	  	EQU	$1A97    	; CLK/1024T no interrupt
 CNTIRQ		EQU	$1A9F		; Timer Interrupt Register
 
+;------------------------------------------------------------------------------
+; MACROS for use with the MAD-Assembler
+;------------------------------------------------------------------------------ 
+.macro		ADCAW			; Add A to word and store in word
+		CLC
+		ADC	:1
+		STA	:1
+		LDA	:1+1
+		ADC	#0
+		STA	:1+1
+.endm
+
+.macro		SBCAW			; Subtract A from word and store in word
+		SEC
+		SBC	:1
+		STA	:1
+		LDA	:1+1
+		SBC	#0
+		STA	:1+1
+.endm
+
+.macro		SBWB	b16 b8	      	; Subtract a byte from a word
+		SEC
+		LDA	:b16
+		SBC	:b8
+		STA	:b16
+		LDA	:b16+1
+		SBC	#0
+		STA	:b16+1
+.endm
+		
 
