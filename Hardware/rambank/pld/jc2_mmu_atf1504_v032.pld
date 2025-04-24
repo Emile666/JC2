@@ -2,6 +2,7 @@
 /* Compiler       : WinCUPL                                      */
 /* HW Version     : MMU ADD-ON PCB V0.3                          */
 /* Version history:                                              */
+/*            V032: - Bug-fix $1C00-$1FFF RAM area               */
 /*            V031: - JTAG pins now also used.                   */
 /*            V030: - MMU 8-bit register added instead of PIA.   */
 /*            V020: - Positive logic for RAM_SEL, K2, K3 and K4. */
@@ -12,7 +13,7 @@
 Name     jc2_mmu_atf1504_v031;
 PartNo   ATF1504_PLCC44 ;
 Date     06-03-2025 ;
-Revision 031 ;
+Revision 032 ;
 Designer Emile ;
 Company  - ;
 Assembly None ;
@@ -211,8 +212,8 @@ nRAM_SEL    = 'b'0; /* emulates open-collector output */
 nRAM_SEL.oe = PHI2 &  A15 &  A14 &  A13 & !BIOS_EN                                /* $E000-$FFFF 8K BIOS-area ROM -> RAM   */
             # PHI2 & !A15 &  A14                                                  /* $4000-$7FFF 16K RAM-bank area         */
             # PHI2 & !A15 & !A14 &  A13                                           /* $2000-$3FFF 8K RAM area (from U7)     */ 
-            # PHI2 & !A15 & !A14 & !A13 &  A12 &  A11 & A10 & !A9 & !A8 & !MON_EN /* $1C00-$1FFF 1K Monitor ROM -> RAM     */
-            # PHI2 & !A15 & !A14 & !A13 &  A12 &  A11 & !A10 & A9 & A8            /* $1B00-$1BFF 256B RIOT shadow, now RAM */
+            # PHI2 & !A15 & !A14 & !A13 &  A12 &  A11 &  A10 & !MON_EN /* $1C00-$1FFF 1K Monitor ROM -> RAM     */
+            # PHI2 & !A15 & !A14 & !A13 &  A12 &  A11 & !A10 &  A9 & A8           /* $1B00-$1BFF 256B RIOT shadow, now RAM */
             # PHI2 & !A15 & !A14 & !A13 &  A12 &  A11 & !A10 & !A9                /* $1800-$19FF 512B unused, now RAM      */
             # PHI2 & !A15 & !A14 & !A13 &  A12 & !A11 &  A10 & !A9                /* $1400-$15FF 512B (from U5D,U5E & U6C) */
             # PHI2 & !A15 & !A14 & !A13 & !A12 & !A11;                            /* $0000-$07FF 2K RAM area (from U8)     */ 
