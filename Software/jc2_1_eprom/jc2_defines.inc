@@ -1,9 +1,6 @@
 ;------------------------------------------------------------------------------
 ; Junior Computer ][ BIOS & Monitor CONSTANTS
 ;------------------------------------------------------------------------------ 
-VERMAIN   	EQU     '1'    		; BIOS main version
-VERPSUB    	EQU     '2'    		; BIOS primary sub version
-VERSSUB		EQU	'0'		; BIOS secondary sub version
 
 ; PIA Register Indices *********************************************************
 PIA_PORTA       EQU     $0C             ; Port A input/output register
@@ -201,7 +198,8 @@ CARD3BASEH	EQU	$19		;K2 = $08, K3 = $0C, K4 = $10
 ;-----------------------------------------------------------------------------
 ; Addresses up to $98 are in use by BASIC, see jc2_basic.asm
 ;-----------------------------------------------------------------------------
-PRSTR		EQU	$CC		; 2-bytes replacement for PSTR
+PRSTR		EQU	$CA		; 2-bytes replacement for PSTR
+END_PTR		EQU	$CC		; ROM end-pointer (2 bytes)
 ROM_PTR		EQU	$CE		; ROM pointer (2 bytes)
 ROM_CS		EQU	$D0		; ROM checksum counter (2 bytes)
 CFLBA0          EQU     $D2		; CF-card LBA 0 [0:7]
@@ -393,4 +391,3 @@ CNTIRQ		EQU	$1A9F		; Timer Interrupt Register
 		STA	:b16+1
 .endm
 		
-

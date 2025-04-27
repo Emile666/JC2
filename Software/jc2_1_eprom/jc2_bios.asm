@@ -1,31 +1,22 @@
 ; ******************************************************************************
-; Junior Computer ][ BIOS Version 1.1.4
-; by Joerg Walke
+; Junior Computer ][ BIOS Version 1.2.0 by Joerg Walke
 ;
 ; first implementation 28.12.2021
 ; updated 16.11.2024 by Joerg Walke
 ;
 ; Assembled With A65
 ;
-; 20.03.2023
-; A bug in the disassembler code was fixed by the
-; German Classic Computing forum user jet2bue. See version history
+; 20.03.2023 A bug in the disassembler code was fixed by the German Classic 
+; Computing forum user jet2bue. See version history
 ;
-; 01.08.2023
-; A bug in SD_WR_BLK was fixed. The bug was found by German Classic Computing
-; forum user Dietrich Lausberg. See version history
+; 01.08.2023 A bug in SD_WR_BLK was fixed. The bug was found by German Classic 
+; Computing forum user Dietrich Lausberg. See version history
 ;
-; 29.04.2024
-; SPI & IRQ optimization by Dietrich Lausberg
+; 29.04.2024 SPI & IRQ optimization by Dietrich Lausberg
 ;
-; 26.05.24
-; Changes in Fast SPI by Dietrich Lausberg
+; 26.05.24 Changes in Fast SPI by Dietrich Lausberg
 ;
-; ******************************************************************************
-; To Do: (maybe in this order)
-;
-;  Paper Tape Reader Driver
-;  ...and many more...
+; 21.04.24 Integration with CF-IDE drivers into 1 32K eprom
 ; ******************************************************************************
 
 MON_COLD_START	JMP  	MAINSTART	; jump to monitor cold start
@@ -33,13 +24,13 @@ MON_WARM_START	JMP	MONINP		; jump to monitor warm start
 
 ; **** Switch BASIC To RAM Page (B000..DFFF) ***********************************
 ; ******************************************************************************
-SWITCH_TO_RAM	LDY	#$20		; load index to RAM annunciator
-		BNE	SWITCH		; branch always
+SWITCH_TO_RAM	JSR	BAS2RAM		; Set MMU bit 7 to 0, enable BASIC RAM
+		RTS			; return
 
 ; **** Switch BASIC To ROM Page (B000..DFFF) ***********************************
 ; ******************************************************************************
-SWITCH_TO_ROM	LDY	#$30		; load index to ROM annunciator
-SWITCH		LDA	(IOBASE),Y	; trigger annunciator address
+SWITCH_TO_ROM	JSR	BAS2ROM		; Set MMU bit 7 to 1, enable BASIC ROM
+SWITCH		NOP			; maintain compatibility with v1.1.4
 		RTS
 
 ; **** Set Standard In/Out Routine ID ******************************************
@@ -1611,8 +1602,8 @@ JCRESET		LDA	#$06			; set PB5 = L (WRITE)
 ; String Data Section
 ; ******************************************************************************
 
-MAGIC0		.byte	$65, $22, $65, $22              ; Magic number of IO-Card
-MAGIC1          .byte   $18, $90, $00, $90              ; clc bcc 00 bcc
+MAGIC0		.byte	$00,$00,$00,$00                 ; Removed by Emile
+MAGIC1          .byte   $18,$90,$00,$90                 ; clc bcc 00 bcc
 
 PSSTR		.by	'PSAYX'				; processor status string
 
@@ -1637,9 +1628,9 @@ MONSTR		.by	CR 'Hex Monitor' CR $00
 
 DT_NOT_SET	.by	CR CR ' Date/Time not set' CR $00
 DATEINPUT	.by	CR ' Date: DD' DATEDIV 'MM' DATEDIV 'YY'
-		.byte	8, 8, 8, 8, 8, 8, 8, 8, $00
+		.byte	8,8,8,8,8,8,8,8,$00
 TIMEINPUT	.by	CR ' Time: HH' TIMEDIV 'MM' TIMEDIV 'SS'
-		.byte	8, 8, 8, 8, 8, 8, 8, 8, $00
+		.byte	8,8,8,8,8,8,8,8,$00
 
 STRINGP2
 DAYS		.by	'Mon' $00
@@ -2154,9 +2145,7 @@ DETECT_LOOP     CLC
                 STA     ADRH            ; set high byte to init routine
                 LDY	#$03            ; test byte string in card ROM against magic number
 COMP_LOOP	LDA	MAGIC1,Y        ; get one byte of magic number
-		;CMP	(ADRL),Y        ; and compare it with ROM content
-		NOP			; Keep addresses the same as for v1.1.4
-		NOP
+		CMP	(ADRL),Y        ; and compare it with ROM content.
 		BNE	NO_MATCH        ; byte does not match, exit inner detection loop
 		DEY                     ; byte matched magic number, try next one
 		BPL	COMP_LOOP       ; more bytes to compare?
@@ -2193,8 +2182,7 @@ NOCARD          RTS                     ; no card found
 		ORG	$ECFC		; maintain compatibility with v1.1.4
 		
 STOREBASE	STA	IOBASEH		; card found, set high byte of base pointer.
-		JSR	HEXOUT		; DEBUG!
-		
+
 ; **** Initialize The IO/Language Card *****************************************
 
 ; ******************************************************************************
@@ -3814,11 +3802,11 @@ SD_BOOT1        LDA     PART0_RS,X              ; load partition start and lengt
 ;----------------------------------------------------------------------------
 ; This routine prints a string to the terminal: A=LSB, Y=MSB
 ;----------------------------------------------------------------------------
-SPRINT		STX 	PRSTR	    		; LSB of text-pointer
-		STY 	PRSTR+1	    		; MSB of text-pointer
-		JMP 	SPROUT	    		; print string routine
+SPRINT		STX 	PRSTR	    	; LSB of text-pointer
+		STY 	PRSTR+1	    	; MSB of text-pointer
+		JMP 	SPROUT	    	; BIOS print string routine
 
-		NOP				; Maintain address compatibility with v1.1.4
+		NOP			; Maintain address compatibility with v1.1.4
 		NOP	
 		
 ; ******************************************************************************
@@ -4265,7 +4253,7 @@ INITOK		LDA #$E0		; LBA3=0, Master, Mode=LBA
 		JSR CFWAIT		; Wait and return
 		BCC CF_ERR		; branch if Error
 		
-		JMP CF_INFO		; Print CF-Card Info, returns with C=1 (OK) and return
+		JMP CF_INFO		; Print CF-Card Info, returns with C=1 (OK)
 
 ;----------------------------------------------------------------------------
 ; This routine waits until the CF-card is ready.
@@ -4334,7 +4322,7 @@ CF_BOOT         JSR	INIT_LBA		; CFLBA0..CFLBA3 = 0 (MBR) and load into CF-card
 ; ensures that addresses do not change in a new firmware version
 ;-------------------------------------------------------------------------------
 INIT_CFC	JSR     WRITE_IO_INFO		; instruction from MAIN routine
-		JSR	CHECK_ROM		; Check ROM checksum
+		JSR	CHECK_ROMS		; Check ROM checksum
 		LDX     #<CFC_DEV
                 LDY     #>CFC_DEV
                 JMP     DEV_ADD         	; add CF-card driver and return

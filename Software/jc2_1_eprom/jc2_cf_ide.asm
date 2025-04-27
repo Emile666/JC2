@@ -1,7 +1,7 @@
 ;---------------------------------------------------------------------------
 ; JC2 CF-IDE Device Driver & MMU related functions.
-; This program adds the necessary files for the CF-IDE Interface to the
-; free space in the BASIC EPROM area. 
+; This program adds the necessary files for the CF-IDE Interface and the
+; MMU related routines. 
 ;---------------------------------------------------------------------------
 
 ;----------------------------------------------------------------------------
@@ -306,22 +306,6 @@ GET_RAMBANK	LDA	MMU		; MMU-register
 RAMBX		RTS			; return		
 		
 ;----------------------------------------------------------------------------
-; This function enables BIOS-ROM at $E000-$FFFF and disables the RAM behind it.
-;----------------------------------------------------------------------------
-BIOS2ROM	LDA	MMU		; MMU-register
-		ORA	#BIOS_EN	; 1 = enable BIOS ROM
-		STA	MMU		; Activate BIOS ROM
-		RTS			; return
-		
-;----------------------------------------------------------------------------
-; This function Enables BIOS-RAM at $E000-$FFFF and disables BIOS-ROM.
-;----------------------------------------------------------------------------
-BIOS2RAM	LDA	MMU		; MMU-register
-		AND	#~BIOS_EN	; 0 = enable BIOS RAM, disable ROM
-		STA	MMU		; Activate BIOS RAM
-		RTS			; return
-
-;----------------------------------------------------------------------------
 ; This function enables Monitor-ROM at $1C00-$1FFF and disables the RAM behind it.
 ;----------------------------------------------------------------------------
 MON2ROM		LDA	MMU		; MMU-register
@@ -354,34 +338,98 @@ BAS2ROM		LDA	MMU			; MMU register
 		RTS				; return
 
 ;----------------------------------------------------------------------------
-; This routine calculates the checksum of the entire ROM area from $B000 to
-; $FFFF. The 16-bit checksum is located at $7FF0-$7FF1, so these 2 bytes are
-; subtracted from the checksum.
+; Check both ROMs: 
+; 1) Monitor ROM at $1C00-$1FFF
+; 2) BASIC + BIOS ROM at $B000-$FFF0
+; Input: A: MSB of ROM begin ($B0 for BIOS, $1C for Monitor).
+;        X: LSB of end-Address
+;        Y: MSB of end-Address
 ;----------------------------------------------------------------------------
-CHECK_ROM    	LDA	$0820		; Select BASIC RAM, TODO: remove it!
-		LDX	#<TXT_CS	; Print '12K ROM'
+CHECK_ROMS	LDA	#$1C		; MSB of $1C00
+		LDX	#$00		; LSB of $1FFF+1 (end-address)
+		LDY	#$20		; MSB of $1FFF+1 (end-address)
+		JSR	CHECK_ROM_STRT	; Check Monitor ROM Checksum
+		LDA	#$B0		; MSB of $B000
+		LDX	#$00		; LSB of $DFFF+1 (end-address)
+		LDY	#$E0		; MSB of $DFFF+1 (end-address)
+		JSR	CHECK_ROM_STRT	; Check BASIC ROM Checksum
+		LDA	#$E0		; MSB of $B000
+		LDX	#$F0		; LSB of $FFF0 (end-address)
+		LDY	#$FF		; MSB of $FFF0 (end-address)
+		;JMP 	CHECK_ROM_STRT	; Check BIOS ROM checksum and return
+		
+;----------------------------------------------------------------------------
+; This routine is the entry-point for the ROM checksum routines.
+; Input: A: MSB of ROM begin ($B0 for BIOS, $1C for Monitor).
+;        X: LSB of end-Address
+;        Y: MSB of end-Address
+;----------------------------------------------------------------------------
+CHECK_ROM_STRT	STX	END_PTR		; LSB of end-address
+		STY	END_PTR+1	; MSB of end-address
+		LDX	#0
+		STX 	ROM_CS		; Init ROM checksum
+		STX 	ROM_CS+1
+		STX	ROM_PTR		; LSB of begin-address
+		STA	ROM_PTR+1	; MSB of begin-address
+		CMP	#$1C		; Monitor ROM?
+		BEQ	MON_CHK_ROM	; branch if Monitor ROM
+		
+		CMP	#$B0		; BASIC ROM?
+		BEQ	BAS_CHK_ROM	; branch if BASIC ROM
+
+		LDX	#<TXT_ROM	; BIOS ROM
+		LDY	#>TXT_ROM
+		BNE 	PR_CHKROM_TXT	; branch always
+		
+BAS_CHK_ROM	LDX	#<TXT_BAS	; BASIC ROM
+		LDY	#>TXT_BAS
+		BNE 	PR_CHKROM_TXT	; branch always
+
+MON_CHK_ROM	LDX	#<TXT_MON	; Monitor ROM
+		LDY	#>TXT_MON
+PR_CHKROM_TXT	JSR	SPRINT
+		LDX	#<TXT_CS	; Print ' KB ROM '
 		LDY	#>TXT_CS
-		JSR	SPRINT		; Print
-		LDY	#$B0
-		STY	ROM_PTR+1	; Start at $B000
+		JSR	SPRINT
 		LDY	#0
-		STY	ROM_PTR
-		STY 	ROM_CS		; Init ROM checksum
-		STY 	ROM_CS+1
+		;JMP	ROM_LP1		; fall-through to ROM_LP1
+
+;----------------------------------------------------------------------------
+; This routine calculates the checksum of the entire ROM area from 
+; ROM_PTR to END_PTR.
+;----------------------------------------------------------------------------
 ROM_LP1		LDA 	(ROM_PTR),Y	; get byte from ROM
 		ADCAW	ROM_CS		; ROM_CS = ROM_CS + A
 		INY			; next byte
-		BNE 	ROM_LP1		; branch if page not done
+		BNE	ROM_CHK_END	; branch if not on a new page
 		
 		INC 	ROM_PTR+1	; MSB, next page
-		BNE	ROM_LP1		; $FFFF+1, branch if not done yet
+ROM_CHK_END	LDA	ROM_PTR+1	; Current ROM address MSB
+		CMP	END_PTR+1	; MSB of end-address
+		BNE	ROM_LP1		; branch if not done yet
 		
-		SBWB	ROM_CS ROM_CS16		; ROM_CS = ROM_CS - ROM_CS16
-		SBWB	ROM_CS ROM_CS16+1	; ROM_CS = ROM_CS - ROM_CS16+1
-		CPW	ROM_CS ROM_CS16		; Compare 2 words
-		BNE	ROM_CS_ERR		; branch if not the same
+		CPY	END_PTR		; End-address?
+		BNE	ROM_LP1		; branch if not at end-address yet
 		
-		LDX	#<TXT_CS_OK	; Print 'OKE'
+		LDA	END_PTR+1
+		CMP	#$FF		; BIOS ROM?
+		BNE	ROM_CHK2	; branch if not BIOS ROM
+		
+		CPW	ROM_CS ROM_CS16	; Compare 2 words BIOS checksum
+		BNE	ROM_CS_ERR	; branch if not the same
+		BEQ	ROM_CS_OK	; branch if the same
+
+ROM_CHK2	CMP	#$E0		; BASIC ROM?
+		BNE	MON_ROM_CMP	; branch if Monitor ROM
+		
+		CPW	ROM_CS BAS_CS16	; Compare 2 words BASIC checksum
+		BNE	ROM_CS_ERR	; branch if not the same
+		BEQ	ROM_CS_OK	; branch if the same
+		
+MON_ROM_CMP	CPW	ROM_CS MON_CS16	; Compare 2 words Monitor checksum
+		BNE	ROM_CS_ERR	; branch if not the same
+
+ROM_CS_OK	LDX	#<TXT_CS_OK	; Print 'OKE'
 		LDY	#>TXT_CS_OK
 		JMP	SPRINT		; Print and return
 ROM_CS_ERR	LDX	#<TXT_CS_ERR	; Print 'Error'
@@ -403,7 +451,10 @@ SPROUTLP	LDA  	(PRSTR),Y   	; load char at string pos y
 		
 ENDSPROUT	RTS			; return
 
-TXT_CS		.by	' 20K ROM Checksum ' $00
+TXT_MON		.by	' JC-MON 1' $00
+TXT_BAS		.by	' BASIC 12' $00
+TXT_ROM		.by	' BIOS   8' $00
+TXT_CS		.by	' KB ROM ' $00
 TXT_CS_OK	.by	'OK' CR $00
 TXT_CS_ERR	.by	'Error' CR $00		
 		
