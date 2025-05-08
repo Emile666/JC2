@@ -174,15 +174,20 @@ VPU_REG0        EQU     $80             ; VPU register 0
 VPU_REG15       EQU     VPU_REG0+15     ; VPU status register pointer
 VPU_STAT0       EQU     0               ; VPU status register 0
 
-; TEMP *************************************************************************
-PPORTLOAD	EQU	$2000		; jump location for test code
-PPORTSAVE	EQU	$2003		; jump location for test code
+
+;------------------------------------------------------------------------------
+; $1800 - $19FF 512 Bytes, this was previously unused, with the new MMU this
+; has become RAM.
+;------------------------------------------------------------------------------
+PPORTLOAD	EQU	$1800		; jump location for test code
+PPORTSAVE	EQU	$1803		; jump location for test code
+CF_LOAD_VEC	EQU	$1806		; 2-byte vector for CF-card LOAD vector
+CF_SAVE_VEC	EQU	$1808		; 2-byte vector for CF-card SAVE vector
+RETURN_VECT     EQU     $180A           ; 2-byte return vector to monitor caller (moved from $01 to avoid Basic collision)
 
 ;------------------------------------------------------------------------------
 ; Junior Computer ][ BIOS & Monitor Address defines
 ;------------------------------------------------------------------------------ 
-RETURN_VECT     EQU     $0001           ; 2-byte return vector to monitor caller
-DEVID		EQU	$03		; 1-byte temp device id
 
 ; Card Base Addresses **********************************************************
 IOBASE		EQU	$14		; pointer to IO card base
@@ -196,8 +201,9 @@ CARD3BASEL	EQU	$18		; always $00
 CARD3BASEH	EQU	$19		;K2 = $08, K3 = $0C, K4 = $10
 
 ;-----------------------------------------------------------------------------
-; Addresses up to $98 are in use by BASIC, see jc2_basic.asm
+; Addresses up to $9C are in use by BASIC, see jc2_basic.asm
 ;-----------------------------------------------------------------------------
+DEVID		EQU	$C9		; 1-byte temp device id (moved from $03 to avoid Basic collision)
 PRSTR		EQU	$CA		; 2-bytes replacement for PSTR
 END_PTR		EQU	$CC		; ROM end-pointer (2 bytes)
 ROM_PTR		EQU	$CE		; ROM pointer (2 bytes)

@@ -1140,10 +1140,10 @@ MAINSTART       SEI			; disable Interrupts
 
                 JSR     INITVECT
 
-INITRESET       LDX     #<  MON_WARM_START
+INITRESET       LDX     #< MON_WARM_START
 		LDY     #> MON_WARM_START
-                STX     RETURN_VECT     ; set entry point for monitor warm start
-                STY     RETURN_VECT+1
+		JSR	SET_RETURN_VECT		; set entry point for monitor warm start
+		NOP				; maintain compatibility with v1.1.4
 
 		LDA     #$80
 		JSR  	DELAY		; wait for ~128ms after reset
@@ -2179,7 +2179,14 @@ DETECT_LP	LDY	#DDRB		; input & output regs are the same
 		STA	IOBASEH		; 0 = no card found
 NOCARD          RTS                     ; no card found
 
-		ORG	$ECFC		; maintain compatibility with v1.1.4
+;----------------------------------------------------------------------------------		
+; This routine sets the return vector that is used by both Monitor and boot.sys.
+;----------------------------------------------------------------------------------		
+SET_RETURN_VECT	STX     RETURN_VECT     	; set entry point for monitor warm start
+                STY     RETURN_VECT+1
+		RTS
+
+		ORG	$ECFF		; maintain compatibility with v1.1.4
 		
 STOREBASE	STA	IOBASEH		; card found, set high byte of base pointer.
 
@@ -2663,7 +2670,7 @@ ENDFILENAME	CPX	#$00
 		INX
 		TYA
 ENDPREP		STA	RBUFF,X		; terminate string with NULL
-		JSR	SETSTRBUFF
+		JSR	SETSTRBUFF	;
 		RTS
 
 ; ******************************************************************************
@@ -3326,7 +3333,7 @@ SPI_SLOW        LDA	#$04
 		STA	(IOBASE),Y		; store timer low value
 		JSR	SPI_RESET		; flush shift register
 		RTS				; Clock is set to 250 kHz
-
+		
 ; ******************************************************************************
 ; Set SPI to Fast Mode (500KHz)
 ; ******************************************************************************
@@ -3804,10 +3811,9 @@ SD_BOOT1        LDA     PART0_RS,X              ; load partition start and lengt
 ;----------------------------------------------------------------------------
 SPRINT		STX 	PRSTR	    	; LSB of text-pointer
 		STY 	PRSTR+1	    	; MSB of text-pointer
-		JMP 	SPROUT	    	; BIOS print string routine
-
-		NOP			; Maintain address compatibility with v1.1.4
-		NOP	
+		JSR 	SPROUT	    	; BIOS print string routine
+		RTS
+		NOP			; maintain v1.1.4 compatibility
 		
 ; ******************************************************************************
 ; Initialize Block Buffer Pointer, it must return with A = 0.
@@ -4221,8 +4227,14 @@ CFC_RD_BUF      CMP     #CMD_READ_BUF
                 BNE     CFC_WR_BUF
                 JMP     CF_RD_LBLK_BUF
 CFC_WR_BUF      CMP     #CMD_WRITE_BUF
-                BNE     CFC_BOOT
+                BNE     CFC_LOAD
                 JMP     CF_WR_LBLK_BUF
+CFC_LOAD	CMP	#CMD_LOAD
+		BNE	CFC_SAVE
+		JMP	(CF_LOAD_VEC)	; Filled in by boot.sys
+CFC_SAVE	CMP	#CMD_SAVE
+		BNE	CFC_BOOT
+		JMP	(CF_SAVE_VEC)	; Filled in by boot.sys
 CFC_BOOT        CMP     #CMD_BOOT
                 BNE     _EMPTY_
                 JMP     CF_BOOT

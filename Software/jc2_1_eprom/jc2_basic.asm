@@ -1,5 +1,5 @@
 
-; Enhanced BASIC ver 2.25
+; Enhanced BASIC ver 2.26
 
 ; $E7E1 $E7CF $E7C6 $E7D3 $E7D1 $E7D5 $E7CF $E81E $E825
 
@@ -18,6 +18,17 @@
 ; 2.21	fixed IF .. THEN RETURN to not cause error
 ; 2.22	fixed RND() breaking the get byte routine
 ; 2.25  Emile: I2C addresses corrected for V1.1.4 bios and integrated with BIOS & MON source-files.
+; 2.26  - I2Cout, I2Cin() and DOS commands added
+;	- Destructive RAM memory test disabled
+;       - Patches from EhBASIC 2.22 added: 
+;         - RAM above code/Ibuff above patch (LAB_20DC)
+;	  - Some function outputs (e.g. FRE()) limited to integers are negative (LAB_UAYFC)
+;         - Use of decimal mode and invalid BCD (LAB_AL2X)
+;	  - First statement after direct mode does not set continue pointer (LAB_1491, LAB_15C2, LAB_163B, LAB_CONT, LAB_1934)
+;	  - String compare of equal strings in direct mode returns FALSE (LAB_1C25)
+;	  - FALSE value stored to a variable after string compare is not exactly zero (LAB_LET)
+;	  - Stack floor protection does not cater for background interrupts (LAB_1212)
+;	  - Allow NEXT, LOOP & RETURN to find FOR, DO or GOSUB structures on stack (LAB_174D)
 ; ********************************************************************************************************
 
 ; changes by Joerg Walke
@@ -291,6 +302,7 @@ Rbyte1			= Rbyte4+1	; most significant PRNG byte
 Rbyte2			= Rbyte4+2	; middle PRNG byte
 Rbyte3			= Rbyte4+3	; least significant PRNG byte
 
+I2Cstat			= $9C		; I2C read byte or ACK/NACK bit
 
 ; token values needed for BASIC
 
@@ -358,12 +370,12 @@ TK_OVAL		= TK_LINE+1		; OVAL token ###
 TK_RECT		= TK_OVAL+1		; RECT token ###
 TK_COLOR	= TK_RECT+1		; COLOR token ###
 TK_DELAY	= TK_COLOR+1		; DELAY token
-TK_RES3		= TK_DELAY+1		; RESERVED ###
-TK_RES4		= TK_RES3+1		; RESERVED ###
+TK_I2COUT	= TK_DELAY+1		; I2Cout token
+TK_DOS		= TK_I2COUT+1		; DOS token
 
 ; secondary command tokens, can't start a statement
 
-TK_TAB		= TK_RES4+1		; TAB token
+TK_TAB		= TK_DOS+1		; TAB token
 TK_ELSE		= TK_TAB+1		; ELSE token
 TK_TO		= TK_ELSE+1		; TO token
 TK_FN		= TK_TO+1		; FN token
@@ -430,8 +442,8 @@ TK_LEFTS	= TK_VPTR+1		; LEFT$ token
 TK_RIGHTS	= TK_LEFTS+1		; RIGHT$ token
 TK_MIDS		= TK_RIGHTS+1		; MID$ token
 TK_PORTIN	= TK_MIDS+1		; PORTIN token
-TK_RES1		= TK_PORTIN+1		; RESERVED ###
-TK_RES5		= TK_RES1+1		; RESERVED ###
+TK_I2CIN	= TK_PORTIN+1		; I2CIN token
+TK_RES5		= TK_I2CIN+1		; RESERVED ###
 TK_RES6		= TK_RES5+1		; RESERVED ###
 
 ; offsets from a base of X or Y
@@ -463,6 +475,13 @@ Ibuffs		= VEC_CC+$14		; start of input buffer after IRQ/NMI code
 Ibuffe		= Ibuffs+$7F		; end of input buffer
 
 Ram_base	= $2001			; start of user RAM (set as needed, should be page aligned)
+Stack_floor	= 16			; bytes left free on stack for background interrupts
+
+I2C_STA		= 1			; I2Cout Start command
+I2C_STAT	= 0			; I2Cin return I2Cstat value
+I2C_RD_ACK	= 1			; I2Cin Read + ACK
+I2C_RD_NAK	= 2			; I2Cin Read + NACK + Stop
+I2C_STO		= 3			; I2Cin Stop only
 
 INPBUF	  	= $768			; change input buffer to last 151 bytes in page 7
 
@@ -529,47 +548,49 @@ TabLoop
 
 ;	BNE	LAB_2DAA			; branch if not null (user typed something)
 
-	LDY	#$00				; else clear Y
+;	LDY	#$00				; else clear Y
 						; character was null so get memory size the hard way
 						; we get here with Y=0 and Itempl/h = Ram_base
-LAB_2D93
-	INC	Itempl				; increment temporary integer low byte
-	BNE	LAB_2D99			; branch if no overflow
-
-	INC	Itemph				; increment temporary integer high byte
-	LDA	Itemph				; get high byte
-	CMP	#>RAM_TOP			; compare with top of RAM+1
-	BEQ	LAB_2DB6			; branch if match (end of user RAM)
-
-LAB_2D99
-	LDA	#$55				; set test byte
-	STA	(Itempl),Y			; save via temporary integer
-	CMP	(Itempl),Y			; compare via temporary integer
-	BNE	LAB_2DB6			; branch if fail
-
-	ASL					; shift test byte left (now $AA)
-	STA	(Itempl),Y			; save via temporary integer
-	CMP	(Itempl),Y			; compare via temporary integer
-	BEQ	LAB_2D93			; if ok go do next byte
-
-	BNE	LAB_2DB6			; branch if fail
-
-LAB_2DAA
-	JSR	LAB_2887			; get FAC1 from string
-	LDA	FAC1_e				; get FAC1 exponent
-	CMP	#$98				; compare with exponent = 2^24
-	BCS	LAB_GMEM			; if too large go try again
-
-	JSR	LAB_F2FU			; save integer part of FAC1 in temporary integer
-						; (no range check)
-
-LAB_2DB6
-	LDA	Itempl				; get temporary integer low byte
-	LDY	Itemph				; get temporary integer high byte
-	CPY	#<Ram_base+1			; compare with start of RAM+$100 high byte
-	BCC	LAB_GMEM			; if too small go try again
-
-
+LAB_2D93	; Disable destructive RAM-test, which did set all available memory to $AA
+	LDA	#<RAM_TOP			; A = LSB of RAM_TOP
+	LDY	#>RAM_TOP			; Y = MSB of RAM_TOP
+;	INC	Itempl				; increment temporary integer low byte
+;	BNE	LAB_2D99			; branch if no overflow
+;
+;	INC	Itemph				; increment temporary integer high byte
+;	LDA	Itemph				; get high byte
+;	CMP	#>RAM_TOP			; compare with top of RAM+1
+;	BEQ	LAB_2DB6			; branch if match (end of user RAM)
+;
+;LAB_2D99
+;	LDA	#$55				; set test byte
+;	STA	(Itempl),Y			; save via temporary integer
+;	CMP	(Itempl),Y			; compare via temporary integer
+;	BNE	LAB_2DB6			; branch if fail
+;
+;	ASL					; shift test byte left (now $AA)
+;	STA	(Itempl),Y			; save via temporary integer
+;	CMP	(Itempl),Y			; compare via temporary integer
+;	BEQ	LAB_2D93			; if ok go do next byte
+;
+;	BNE	LAB_2DB6			; branch if fail
+;
+;LAB_2DAA
+;	JSR	LAB_2887			; get FAC1 from string
+;	LDA	FAC1_e				; get FAC1 exponent
+;	CMP	#$98				; compare with exponent = 2^24
+;	BCS	LAB_GMEM			; if too large go try again
+;
+;	JSR	LAB_F2FU			; save integer part of FAC1 in temporary integer
+;						; (no range check)
+;
+;LAB_2DB6
+;	LDA	Itempl				; get temporary integer low byte
+;	LDY	Itemph				; get temporary integer high byte
+;	CPY	#<Ram_base+1			; compare with start of RAM+$100 high byte
+;	BCC	LAB_GMEM			; if too small go try again
+;
+;
 ; uncomment these lines if you want to check on the high limit of memory. Note if
 ; RAM_TOP is set too low then this will fail. default is ignore it and assume the
 ; users know what they're doing!
@@ -700,6 +721,10 @@ LAB_120A
 ; check room on stack for A bytes
 ; stack too deep? do OM error
 LAB_1212
+	.if	Stack_floor			; Stack floor protection patch
+	CLC					; prep ADC
+	ADC	#Stack_floor			; stack pointer lower limit before interrupts
+	.endif
 	STA	TempB				; save result in temp byte
 	TSX					; copy stack
 	CPX	TempB				; compare new 'limit' with stack
@@ -1272,7 +1297,7 @@ LAB_1491
 	LDX	#$FD			; new stack pointer
 	TXS				; reset stack
 	LDA	#$00			; clear byte
-	STA	Cpntrh			; clear continue pointer high byte
+	;STA	Cpntrh			; clear continue pointer high byte (patched)
 	STA	Sufnxf			; clear subscript/FNX flag
 LAB_14A6
 	RTS
@@ -1499,7 +1524,7 @@ LAB_15C2
 	LDX	Clineh			; continue line is $FFxx for immediate mode
 					; ($00xx for RUN from immediate mode)
 	INX				; increment it (now $00 if immediate mode)
-	BEQ	LAB_15D1		; branch if null (immediate mode)
+	;BEQ	LAB_15D1		; branch if null (immediate mode) (patched)
 
 	STA	Cpntrl			; save continue pointer low byte
 	STY	Cpntrh			; save continue pointer high byte
@@ -1585,12 +1610,12 @@ LAB_163B
 	BNE	LAB_167A		; if wasn't CTRL-C or there is a following byte return
 
 	LDA	Bpntrh			; get the BASIC execute pointer high byte
-	EOR	#>Ibuffs		; compare with buffer address high byte (Cb unchanged)
-	BEQ	LAB_164F		; branch if the BASIC pointer is in the input buffer
+	;EOR	#>Ibuffs		; compare with buffer address high byte (Cb unchanged)
+	;BEQ	LAB_164F		; branch if the BASIC pointer is in the input buffer
 					; (can't continue in immediate mode)
 
 					; else ..
-	EOR	#>Ibuffs		; correct the bits
+	;EOR	#>Ibuffs		; correct the bits (patched 3 lines)
 	LDY	Bpntrl			; get BASIC execute pointer low byte
 	STY	Cpntrl			; save continue pointer low byte
 	STA	Cpntrh			; save continue pointer high byte
@@ -1684,6 +1709,7 @@ LAB_CONT
 	BNE	LAB_167A		; if following byte exit to do syntax error
 
 	LDY	Cpntrh			; get continue pointer high byte
+	CPY   	#>Ibuffs          	; *** fix p2: test direct mode 
 	BNE	LAB_166C		; go do continue if we can
 
 	LDX	#$1E			; error code $1E ('Can't continue' error)
@@ -1968,30 +1994,49 @@ LAB_174C
 	JMP	LAB_GOTO		; else was numeric so do GOTO n
 
 					; is var or keyword
-LAB_174D
-	CMP	#TK_RETURN		; compare the byte with the token for RETURN
-	BNE	LAB_174G		; if it wasn't RETURN go interpret BASIC code from (Bpntrl)
-					; and return to this code to process any following code
-
-	JMP	LAB_1602		; else it was RETURN so interpret BASIC code from (Bpntrl)
-					; but don't return here
-
-LAB_174G
-	JSR	LAB_15FF		; interpret BASIC code from (Bpntrl)
+LAB_174D	; Patch: allow NEXT, LOOP & RETURN to find FOR, DO or GOSUB structures on stack
+	PLA                     	; discard interpreter loop return address
+	PLA                     	; so data structures are at the correct stack offset
+	JSR   	LAB_GBYT          	; restore token or variable
+	JSR   	LAB_15FF          	; interpret BASIC code from (Bpntrl)
 
 ; the IF was executed and there may be a following ELSE so the code needs to return
 ; here to check and ignore the ELSE if present
 
-	LDY	#$00			; clear the index
-	LDA	(Bpntrl),Y		; get the next BASIC byte
-	CMP	#TK_ELSE		; compare it with the token for ELSE
-	BEQ	LAB_DATA		; if ELSE ignore the following statement
+	LDY   	#$00              	; clear the index
+	LDA   	(Bpntrl),Y        	; get the next BASIC byte
+	CMP   	#TK_ELSE          	; compare it with the token for ELSE
+	BNE   	LAB_no_ELSE       	; no - continue on this line
+	JSR   	LAB_DATA          	; yes - skip the rest of the line
 
 ; there was no ELSE so continue execution of IF <expr> THEN <stat> [: <stat>]. any
 ; following ELSE will, correctly, cause a syntax error
 
-	RTS				; else return to the interpreter inner loop
-
+LAB_no_ELSE
+	JMP 	LAB_15C2            	; return to the interpreter inner loop 
+;	CMP	#TK_RETURN		; compare the byte with the token for RETURN
+;	BNE	LAB_174G		; if it wasn't RETURN go interpret BASIC code from (Bpntrl)
+;					; and return to this code to process any following code
+;
+;	JMP	LAB_1602		; else it was RETURN so interpret BASIC code from (Bpntrl)
+;					; but don't return here
+;
+;LAB_174G
+;	JSR	LAB_15FF		; interpret BASIC code from (Bpntrl)
+;
+;; the IF was executed and there may be a following ELSE so the code needs to return
+;; here to check and ignore the ELSE if present
+;
+;	LDY	#$00			; clear the index
+;	LDA	(Bpntrl),Y		; get the next BASIC byte
+;	CMP	#TK_ELSE		; compare it with the token for ELSE
+;	BEQ	LAB_DATA		; if ELSE ignore the following statement
+;
+;; there was no ELSE so continue execution of IF <expr> THEN <stat> [: <stat>]. any
+;; following ELSE will, correctly, cause a syntax error
+;
+;	RTS				; else return to the interpreter inner loop
+;
 ; perform ELSE after IF
 LAB_174E
 	LDY	#$00			; clear the BASIC byte index
@@ -2177,8 +2222,9 @@ LAB_LET
 	JSR	LAB_EVEX		; evaluate expression
 	PLA				; pop data type flag
 	ROL				; set carry if type = string
-	JSR	LAB_CKTM		; type match check, set C for string
-	BNE	LAB_17D5		; branch if string
+	; patch result of a string compare stores string pointer to variable
+	JSR	LAB_CKTM		; type match check, keep C (expected type)
+	BCS	LAB_17D5		; branch if string
 
 	JMP	LAB_PFAC		; pack FAC1 into variable (Lvarpl) and return
 
@@ -2518,7 +2564,8 @@ LAB_1934
 	CMP	Ibuffs			; test first byte in buffer
 	BNE	LAB_1953		; branch if not null input
 
-	CLC				; was null input so clear carry to exit program
+	; *** change p2: keep carry set to throw break message
+	;CLC				; was null input so clear carry to exit program
 	JMP	LAB_1647		; go do BREAK exit
 
 ; perform READ
@@ -3147,7 +3194,8 @@ LAB_1C18
 LAB_1C24
 	JMP	LAB_UFAC		; unpack memory (AY) into FAC1
 
-LAB_1C25
+LAB_1C25	; patch string pointer high byte trashed when moved to stack
+	LSR   	FAC1_r            	; clear bit 7 (<$80) = do not round up
 	RTS
 
 ; get value from line .. continued
@@ -4034,6 +4082,15 @@ LAB_1FB4
 	LDA	Sstorh			; get bottom of string space high byte
 	SBC	Earryh			; subtract array mem end high byte
 
+; save and convert unsigned integer AY to FAC1
+LAB_UAYFC
+	LSR	Dtypef            	; clear data type flag, $FF=string, $00=numeric
+	STA	FAC1_1            	; save FAC1 mantissa1
+	STY	FAC1_2            	; save FAC1 mantissa2
+	LDX	#$90              	; set exponent=2^16 (integer)
+	SEC                     	; always positive
+	JMP	LAB_STFA          	; set exp=X, clear FAC1_3, normalise and return 
+      
 ; save and convert integer AY to FAC1
 LAB_AYFC
 	LSR	Dtypef			; clear data type flag, $FF=string, $00=numeric
@@ -4248,12 +4305,14 @@ LAB_20D0
 	BCC	LAB_20DC		; branch if no low byte overflow
 
 	INX				; else increment high byte
-LAB_20DC
+LAB_20DC				; RAM above code / Ibuff above EhBASIC patch V2
 	STX	Sendh			; save string end high byte
 	LDA	ssptr_h			; get string start high byte
-	CMP	#>Ram_base		; compare with start of program memory
-	BCS	LAB_RTST		; branch if not in utility area
-
+	BEQ   	LAB_MVST          	; fix STR$() using page zero via LAB_296E
+	
+	CMP   	#>Ibuffs          	; compare with location of input buffer page
+	BNE   	LAB_RTST          	; branch if not in utility area
+LAB_MVST 
 					; string in utility area, move to string memory
 	TYA				; copy length to A
 	JSR	LAB_209C		; copy des_pl/h to des_2l/h and make string space A bytes
@@ -4871,7 +4930,7 @@ LAB_SADD
 	LDA	(Cvaral),Y		; get string pointer low byte
 	TAY				; copy string pointer low byte to Y
 	TXA				; copy string pointer high byte to A
-	JMP	LAB_AYFC		; save and convert integer AY to FAC1 and return
+	JMP	LAB_UAYFC		; save and convert unsigned integer AY to FAC1 and return
 
 ; perform LEN()
 LAB_LENS
@@ -5023,7 +5082,7 @@ LAB_DEEK
 	INC	Itemph			; increment pointer high byte
 Deekh
 	LDA	(Itempl,X)		; PEEK high byte
-	JMP	LAB_AYFC		; save and convert integer AY to FAC1 and return
+	JMP	LAB_UAYFC		; save and convert unsigned integer AY to FAC1 and return
 
 ; perform DOKE
 LAB_DOKE
@@ -6846,14 +6905,15 @@ LAB_HEXS
 	JSR	LAB_MSSP		; make string space A bytes long
 	LDY	#$05			; set string index
 
-	SED				; need decimal mode for nibble convert
+	; Disable decimal mode patch
+	;SED				; need decimal mode for nibble convert
 	LDA	nums_3			; get lowest byte
 	JSR	LAB_A2HX		; convert A to ASCII hex byte and output
 	LDA	nums_2			; get middle byte
 	JSR	LAB_A2HX		; convert A to ASCII hex byte and output
 	LDA	nums_1			; get highest byte
 	JSR	LAB_A2HX		; convert A to ASCII hex byte and output
-	CLD				; back to binary
+	;CLD				; back to binary
 
 	LDX	#$06			; character count
 	LDA	TempB			; get # of characters
@@ -6877,8 +6937,11 @@ LAB_A2HX
 	LSR				; /4
 	LSR				; /8
 	LSR				; /16
-LAB_AL2X
+LAB_AL2X				; Disable decimal mode patch added
 	CMP	#$0A			; set carry for +1 if >9
+	BCC   	LAB_AL20          	; skip adjust if <= 9
+	ADC   	#$06              	; adjust for A to F 
+LAB_AL20
 	ADC	#'0'			; add ASCII '0'
 	STA	(str_pl),Y		; save to temp string
 	DEY				; decrement counter
@@ -7393,7 +7456,7 @@ LAB_VARPTR
 	JSR	LAB_1BFB		; scan for ')" , else do syntax error then warm start
 	LDY	Cvaral			; get var address low byte
 	LDA	Cvarah			; get var address high byte
-	JMP	LAB_AYFC		; save and convert integer AY to FAC1 and return
+	JMP	LAB_UAYFC		; save and convert unsigned integer AY to FAC1 and return
 
 ; perform PI
 LAB_PI
@@ -7627,6 +7690,10 @@ LAB_PLIST
 	JSR	SET_STDOUTID		; and set it as standard output device
 	RTS
 
+; perform DOS ****************************
+LAB_DOS					; If no DOS is loaded, this could hang the system!
+	JMP 	(RETURN_VECT)		; Return to DOS through return vector
+
 ; perform HOME ****************************
 LAB_HOME
 	LDA	#CMD_HOME
@@ -7658,10 +7725,6 @@ LAB_LOCATE
 	JSR	LAB_GET2BYTEPARMS	; get two byte parameters into X and Y
 	LDA	#CMD_SETCURSOR
 	JMP 	(STDCMD)		; Call Junior Computer standard SETCURSOR routine
-
-LAB_SYNTAX_ERR
-	JSR	LAB_SNER		; throw syntax error
-	RTS
 
 ; perform IN# *****************************
 LAB_INNUM
@@ -7698,6 +7761,9 @@ LAB_PORTOUT
 	STA	(IOBASE),Y
 	RTS
 
+LAB_SYNTAX_ERR
+	JMP	LAB_SNER		; throw syntax error and return
+
 ; perform WRITEI2C ************************
 LAB_WRITEI2C
 	STA	Temp1			; save data byte to Temp1
@@ -7709,6 +7775,56 @@ LAB_WRITEI2C
 	JSR	I2C_STOP		; Send I2C Stop Condition
 	RTS
 
+; perform I2C write operations ************
+LAB_I2COUT
+	BEQ	LAB_SYNTAX_ERR		; if no following token, exit and throw syntax error
+	JSR	LAB_GET2BYTEPARMS	; get two parameters: X=addr, Y=ctrl
+	STX	Temp1			; Temp1=X=addr/data byte
+	TYA				; A=ctrl byte
+	CMP	#I2C_STA		; I2C-start?
+	BNE	I2C_WR			; branch if not I2C-start
+	
+	JSR	I2C_START		; send start condition (affects A and Y)
+	CPX	#$00			; Is address byte 0?
+	BNE	I2C_WR			; branch if address byte > 0
+	RTS				; otherwise, just return
+
+I2C_WR	LDA	Temp1			; restore data byte to A
+	JSR	I2C_SEND		; I2C-write: write byte
+	BCC	SET_NAK			; C=0: NACK, C=1: ACK, branch if NACK
+
+	LDA	#0			; return I2C ACK (0)
+	BEQ	SV_NAK			; branch always
+SET_NAK	LDA	#1			; return I2C NACK (1)
+SV_NAK	STA	I2Cstat			; save in I2C status
+	RTS
+
+; perform I2C read operations ************
+LAB_I2CIN
+	JSR	LAB_F2FX		; save integer part of FAC1 in temporary integer (Itempl)
+	LDA	Itempl			; get byte via temporary integer
+	CMP	#I2C_STO		; I2C-stop command only?
+	BEQ	I2C_STOP_CMD		; branch if stop-command only
+
+	CMP	#I2C_STAT		; Return I2Cstat result?
+	BEQ	I2C_RD_X		; branch if I2Cstat return only
+
+	JSR	I2C_RCV			; I2C-read: receive byte 
+	STA	I2Cstat			; save received byte
+	LDA	Itempl			; get ctrl byte back
+	CMP	#I2C_RD_ACK		; Read followed by ACK?
+	BNE	RD_NAK			; branch if not an ACK
+	
+	JSR	I2C_ACK			; send ACK (more bytes to read) and return
+	BNE	I2C_RD_X		; branch always
+	
+RD_NAK	JSR	I2C_NACK		; send NACK (done reading)
+I2C_STOP_CMD
+	JSR	I2C_STOP		; send I2C-stop Command
+I2C_RD_X
+	LDY	I2Cstat			; load I2C-status byte in Y
+	JMP	LAB_1FD0		; convert Y to byte in FAC1 and return
+	
 ; perform PORTIN **************************
 LAB_PORTIN
 	JSR	LAB_EVBY		; evaluate byte expression, result in X
@@ -7785,10 +7901,6 @@ LAB_OVAL
 LAB_COLOR
 LAB_RECT
 			
-LAB_RES3
-LAB_RES4
-
-LAB_RES1
 LAB_RES5
 LAB_RES6
 	RTS
@@ -7796,7 +7908,7 @@ LAB_RES6
 ; **** end of new commands ****
 
 
-; system dependant i/o vectors
+; system dependent i/o vectors
 ; these are in RAM and are set by the monitor at start-up
 
 V_INPT	JMP	(STDIN)			; non halting scan input device vector (Junior Computer 2)
@@ -7878,7 +7990,7 @@ StrTab
 EndTab
 
 LAB_MSZM
-	.by	'Enhanced BASIC 2.25',$0A,$00
+	.by	'Enhanced BASIC 2.26',$0A,$00
 ;	.byte	$0D,$0A,'Memory size ',$00
 
 LAB_SMSG
@@ -8063,8 +8175,8 @@ LAB_CTBL
 	.word	LAB_RECT-1		; RECT		new command (Junior Computer 2)	
 	.word	LAB_COLOR-1		; COLOR		new command (Junior Computer 2)	
 	.word	LAB_DELAY-1		; DELAY		new command (Junior Computer 2)	
-	.word	LAB_RES3-1		; RES3		new command (Junior Computer 2)
-	.word	LAB_RES4-1		; RES4		new command (Junior Computer 2)
+	.word	LAB_I2COUT-1		; I2COUT	new command (Junior Computer 2)
+	.word	LAB_DOS-1		; DOS		new command (Junior Computer 2)
 
 ; function pre process routine table
 
@@ -8106,7 +8218,7 @@ LAB_FTPM	= LAB_FTPL+$01
 	.word	LAB_LRMS-1		; RIGHT$()		"
 	.word	LAB_LRMS-1		; MID$()		"
 	.word	LAB_PPFN-1		; PORTIN(n)	process string expression in ()
-	.word	$0000			; RESERVED	none TEMP
+	.word	LAB_PPFN-1		; I2CIN(n)	process string expression in ()
 	.word	$0000			; RESERVED	none TEMP
 	.word	$0000			; RESERVED	none TEMP
 
@@ -8149,7 +8261,7 @@ LAB_FTBM	= LAB_FTBL+$01
 	.word	LAB_RIGHT-1		; RIGHT$()
 	.word	LAB_MIDS-1		; MID$()
 	.word	LAB_PORTIN-1		; PORTIN	new function (Junior Computer 2)
-	.word	LAB_RES1-1		; RESERVED	new function (Junior Computer 2)		
+	.word	LAB_I2CIN-1		; I2CIN()	new function (Junior Computer 2)		
 	.word	LAB_RES5-1		; RESERVED	new function (Junior Computer 2)
 	.word	LAB_RES6-1		; RESERVED	new function (Junior Computer 2)
 
@@ -8333,7 +8445,9 @@ LBB_DELAY
 LBB_DIM
 	.byte	'IM',TK_DIM		; DIM
 LBB_DOKE
-	.byte	'OKE',TK_DOKE		; DOKE note - 'DOKE' must come before 'DO'
+	.byte	'OKE',TK_DOKE		; DOKE
+LBB_DOS
+	.byte	'OS',TK_DOS		; DOS note - 'DOS' must come before 'DO'
 LBB_DO
 	.byte	'O',TK_DO		; DO
 	.byte	$00
@@ -8372,6 +8486,10 @@ LBB_HOME
     	.byte   'OME',TK_HOME 		; HOME
 	.byte	$00
 TAB_ASCI
+LBB_I2CIN
+	.byte	'2Cin(',TK_I2CIN	; I2Cin
+LBB_I2COUT
+	.byte	'2Cout',TK_I2COUT	; I2Cout
 LBB_IF
 	.byte	'F',TK_IF		; IF
 LBB_INNUM
@@ -8482,12 +8600,6 @@ LBB_RETIRQ
 	.byte	'ETIRQ',TK_RETIRQ	; RETIRQ
 LBB_RETNMI
 	.byte	'ETNMI',TK_RETNMI	; RETNMI
-LBB_RES1
-	.byte	'ES1',TK_RES1		; RES1
-LBB_RES3
-	.byte	'ES3',TK_RES3		; RES3
-LBB_RES4
-	.byte	'ES4',TK_RES4		; RES4
 LBB_RES5
 	.byte	'ES5(',TK_RES5		; RES5
 LBB_RES6
@@ -8696,10 +8808,10 @@ LAB_KEYT
 	.word	LBB_COLOR		; COLOR
 	.byte	5,'D'
 	.word	LBB_DELAY		; DELAY	
-	.byte	4,'R'
-	.word	LBB_RES3		; RESERVED
-	.byte	4,'R'
-	.word	LBB_RES4		; RESERVED
+	.byte	6,'I'
+	.word	LBB_I2COUT		; I2COUT
+	.byte	3,'D'
+	.word	LBB_DOS			; DOS
 
 ; secondary commands (can't start a statement)
 	.byte	4,'T'
@@ -8828,8 +8940,8 @@ LAB_KEYT
 	.word	LBB_MIDS		; MID$
 	.byte	5,'P'			;
 	.word	LBB_PORTIN		; PORTIN
-	.byte	5,'R'			;
-	.word	LBB_RES1		; RESERVED
+	.byte	6,'I'			;
+	.word	LBB_I2CIN		; I2CIN
 	.byte	5,'R'			;
 	.word	LBB_RES5		; RESERVED
 	.byte	5,'R'			;

@@ -16,7 +16,6 @@ PSTRH     	EQU   	$EB      	; upper address byte of output string pointer
 ACC		EQU	$F3		; accumulator
 YREG		EQU	$F4		; y-register
 XREG		EQU	$F5		; x-register
-NUM32      	EQU   	$F8     	; low 32 bit number byte
 TEMP      	EQU   	$FC     	; temp storage
 YSAV      	EQU   	$FD     	; Y register storage
 
@@ -33,15 +32,17 @@ HEXOUT          EQU     $E091           ; print 2-byte hex number
 WRITETIME2	EQU	$E29F		; Write Time to RTC
 LOADSTRING	EQU	$E543		; Load String pointer
 PRINTTIME	EQU	$EC05		; Print Time routine
+SPRINT		EQU	$F682		; Print a string to the terminal (BIOS v1.2.1)
 
-		.word RUN_ADR		; Needed for lm command (XMODEM load program)
-
-		ORG $2000
+.if	USE_XMODEM = 1
+	.word	RUN_ADDR		; Needed for XMODEM lm command loading .bin files
+.endif
+		ORG $3000		; .COM file loads to $3000 by DOS
 	
 ;----------------------------------------------------------------------------
 ; This is the main program-entry
 ;----------------------------------------------------------------------------
-RUN_ADR 	LDX #<TXT_TITLE     	; Print title text
+RUN_ADDR 	LDX #<TXT_TITLE     	; Print title text
 		LDY #>TXT_TITLE     	;
 		JSR SPRINT          	;
 
@@ -154,13 +155,6 @@ NOTNUM		LDX 	#0		; X=0, not a number
 		RTS
 ISNUM		LDX	#1		; X=1, a number
 		RTS
-
-;----------------------------------------------------------------------------
-; This routine prints a string to the terminal: X=LSB, Y=MSB
-;----------------------------------------------------------------------------
-SPRINT		STX PSTR	    	; LSB of text-pointer
-		STY PSTR+1	    	; MSB of text-pointer
-		JMP STROUT	    	; BIOS print string routine
 
 TIME_INPUT	.by	'hh' TIMEDIV 'mm' TIMEDIV 'ss' BS BS BS BS BS BS BS BS $00
 

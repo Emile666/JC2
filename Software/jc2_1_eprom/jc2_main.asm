@@ -1,11 +1,14 @@
 ; ------------------------------------------------------------------------------
-; Junior Computer ][ BIOS Version 1.2.0 by Joerg Walke
+; Junior Computer ][ BIOS Version 1.2.1 by Joerg Walke
 ;
 ; 21-04-25: v1.2.0 Emile, Integration into 1 eprom
+; 08-05-25: v1.2.1 -Basic update (v2.22 patches + I2COUT, I2CIN and DOS commands)
+;                  -CF_LOAD_VEC/CF_SAVE_VEC added, RETURN_VECT moved to $180A 
+;                  -Address corrections to maintain V1.1.4 compatibility (broken in V1.2.0)
 ; ------------------------------------------------------------------------------
 VERMAIN   	EQU     '1'    			; BIOS main version
 VERPSUB    	EQU     '2'    			; BIOS primary sub version
-VERSSUB		EQU	'0'			; BIOS secondary sub version
+VERSSUB		EQU	'1'			; BIOS secondary sub version
 
         	OPT h-                          ; no DOS file-header
         	OPT f+                          ; save as single block
@@ -19,7 +22,7 @@ VERSSUB		EQU	'0'			; BIOS secondary sub version
 ;-------------------------------------------------------------------------------------------------------
 MONITOR_BLOCK	.local, $1C00
 ;-------------------------------------------------------------------------------------------------------
-		icl 	"jc2_mon.asm"
+		icl 	"jc2_mon.asm"		; Monitor source-file
 ;-------------------------------------------------------------------------------------------------------
 MONITOR_END	
 		.endl

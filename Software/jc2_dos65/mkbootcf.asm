@@ -1,5 +1,6 @@
 ;---------------------------------------------------------------------------
 ;MKBOOT for CF-IDE Interface
+;V2: version for new Eprom BIOS V1.2.1 + bug-fix BIOS addresses + BOOT_CODE = $4000
 ;---------------------------------------------------------------------------
         OPT h- ; do not add file header
         OPT f+ ; save as single block
@@ -44,6 +45,7 @@ SYS_LD_BOOTBLK	EQU	$F6E7		; Load Boot block from device
 SYS_MBR_ID	EQU	$F6EE		; Load Boot block from device
 SYS_CHECK_OS	EQU	$F700		; Check OS OEM String
 DEV_ADD		EQU	$F76F		; Add Device Driver
+CFC_DEV_ROM	EQU	$F9D0		; Device driver in eprom V1.2.0
 
 ; Device Command Constants *****************************************************
 CMD_INIT	EQU	0               ; Init device
@@ -61,13 +63,9 @@ BLOCK_BUF      	EQU     $0600           ; Data Block Buffer
 MBR             EQU     BLOCK_BUF       ; Master Boot Block Code
 PART0		EQU	$07BE		; Partition 0 start in MBR
 PART0_START	EQU	PART0 + 8 	; Partition 0 relative sector field
-
 BOOTBLK_TAG     EQU     $07FE           ; Address of Boot Block Tag ($55 $AA)
 
-
-_EMPTY_ROM	EQU	$F84E		; Just CLC RTS
-
-; Constants *******************
+; Constants in Volume ID (=Partition 1st sector) *******************
 Sectors_Per_Cluster EQU  $060D		; 1-byte, should be a power of 2
 Reserved_Sectors    EQU  $060E		; 2-byte
 Number_of_FATs      EQU  $0610		; 1-byte, typical 2
@@ -76,16 +74,17 @@ Num_Log_Sectors     EQU  $0613		; 2-byte, if 0 -> 4 bytes at $0620
 Medium_Descr_Byte   EQU  $0615		; 1-byte
 Sectors_Per_FAT16   EQU  $0616		; 2-byte, #sectors / FAT (0 for FAT32)
 Sectors_Per_FAT32   EQU  $0624		; 2-byte
-Dir_Start_Cluster   EQU  $062C		; 
+Dir_Start_Cluster   EQU  $062C		; 4-byte, aka root_dir_first_cluster, copied to D_START_DIR
 File_System_Type    EQU  $0636		; 8-byte, filesystem type e.g. "FAT12   ", "FAT16   "
 
+BOOT_CODE       EQU  	$4000		; Must be aligned with ORG of boot.sys!
+
 DIR_BLK_BUF     EQU  	$0200		
-BOOT_CODE       EQU  	$2000
 MOUNTED_DEVS    EQU     $0400           ; Table of mounted devices
 BOOT_PART       EQU     MOUNTED_DEVS    ; Boot Medium Descriptor
 
-D_PART_START    EQU     BOOT_PART
-D_PART_SIZE     EQU     BOOT_PART+$04
+D_PART_START    EQU     BOOT_PART	; 4 Bytes - Partition Start LBA, set by CF/SD Boot routine
+D_PART_SIZE     EQU     BOOT_PART+$04	; 4 Bytes - FAT12 Partition Size
 D_DEV_ID        EQU     BOOT_PART+$08
 D_MEDIUM_DESCR  EQU     BOOT_PART+$09
 D_FAT_TYPE      EQU     BOOT_PART+$0A
@@ -153,8 +152,20 @@ RUN_ADDR	LDX 	#<TXT_TITLE    	; Print title text
 		LDY 	#>TXT_TITLE    	;
 		JSR 	SPRINT         	; Print title text
 		
+		; Now check if device-driver is already added (in eprom V1.2.0 and higher)
+		LDA	#HDD1_ID
+		ASL
+		TAX
+		LDA	$1A08,X
+		CMP	#<CFC_DEV_ROM
+		BNE	NO_DEV_PRES
+		
+		LDA	$1A09,X
+		CMP	#>CFC_DEV_ROM
+		BEQ	OPENDD		; branch if device driver present in ROM
+
 		; Copy CF device descriptor into dev. descr. table
-		LDX     #<CFC1_DEV
+NO_DEV_PRES	LDX     #<CFC1_DEV
                 LDY     #>CFC1_DEV
                 JSR     DEV_ADD         ; add CF-card driver
 		BCS	OPENDD		; branch on success
@@ -489,8 +500,8 @@ WR_BUF		LDX #<CURR_VOLUME	;
 ; Addition for Standard Driver Descriptors table
 ;----------------------------------------------------------------------------
 CFC1_DEV	.byte	HDD1_ID, $00     ; CF-Card Driver Descriptor
-		.word	_EMPTY_ROM
-		.word	_EMPTY_ROM
+		.word	_EMPTY_
+		.word	_EMPTY_
 		.word   CFC_CMD
 
 ;----------------------------------------------------------------------------
@@ -1012,19 +1023,19 @@ SET_FAT16       LDX     #FAT16_Type         ; set FAT16 type ID
 SET_FAT_TYPE    STX     D_FAT_TYPE          ; store FAT type
 		LDX     #<D_PART_START      ; load pointer to Partition_Start_Sector
                 LDY     #>D_PART_START
-                JSR     LOAD_32             ; load Start_Sector value
+                JSR     LOAD_32             ; NUM32 = D_PART_START
                 LDX     Reserved_Sectors    ; load low byte of Reserved_Sectors
                 LDY     Reserved_Sectors+1  ; load high byte of Reserved_Sectors
-                JSR     ADD_32_16           ; add Reserved_Sectors to Start_Sector
+                JSR     ADD_32_16           ; NUM32 += Reserved_Sectors
                 LDX     #<D_START_FAT1
                 LDY     #>D_START_FAT1
-                JSR     STORE_32            ; store result to Start_Of_FAT1 Pointer
+                JSR     STORE_32            ; D_START_FAT1 = D_PART_START + Reserved_Sectors
                 LDX     Sectors_Per_FAT16   ; load low byte of Sectors_Per_FAT
                 LDY     Sectors_Per_FAT16+1 ; load high byte of Sectors_Per_FAT
                 JSR     ADD_32_16           ; add Sectors_Per_FAT to Start_Of_FAT1 Pointer
                 LDX     #<D_START_FAT2
                 LDY     #>D_START_FAT2
-                JSR     STORE_32            ; and store result to Start_Of_FAT2 Pointer
+                JSR     STORE_32            ; D_START_FAT2 = D_START_FAT1 + Sectors_Per_FAT16
                 LDY     Number_of_FATs      ; get Number_of_FATs
                 STY     D_NUM_OF_FAT        ; save Number_of_FATs to descriptor
                 DEY
@@ -1256,7 +1267,7 @@ SET_DIR_START   LDA     Dir_Start_Cluster,X 	; copy directory start cluster into
                 BPL     SET_DIR_START
 
 ; calc LBA of first directory block ********************************************
-		SEC                 		;
+		SEC                 		; NUM32 = D_START_DIR - 2
 		LDA 	#$02            	;
 		TAX                 		;
 		SBC 	NUM32             	;

@@ -37,14 +37,15 @@ READTIME        EQU     $E2DE		; Read Current time
 READDATE        EQU     $E2E2		; Read Current date
 LOADSTRING	EQU	$E543		; Load String pointer
 
-		.word RUN_ADR		; Needed for lm command (XMODEM load program)
-
-		ORG $2000
+.if	USE_XMODEM = 1
+	.word	RUN_ADDR		; Needed for XMODEM lm command loading .bin files
+.endif
+		ORG $3000		; .COM file loads to $3000 by DOS
 	
 ;----------------------------------------------------------------------------
 ; This is the main program-entry
 ;----------------------------------------------------------------------------
-RUN_ADR 	LDX #<TXT_TITLE     	; Print title text
+RUN_ADDR 	LDX #<TXT_TITLE     	; Print title text
 		LDY #>TXT_TITLE     	;
 		JSR SPRINT          	;
 
