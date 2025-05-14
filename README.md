@@ -20,7 +20,8 @@ Since these projects nearly always contain a GAL or CPLD, the .pld files describ
 
 - [RAM-bank add-on](./Hardware/rambank): I created a 512K add-on board for the JC2 which contains a AS6C4008 512Kx8 SRAM and a ATF1504 plcc44 GAL. It contains a memory management unit (MMU) register that can switch Monitor ROM, BIOS ROM and the different RAM-banks (28 banks of 16K each). Current version is made with Eagle, never revisions are planned to be made with KiCad.
 - [Compact-Flash IDE interface](./Hardware/cf_ide): The idea originated from the Atari XL CF-IDE interface. I changed it for the JC2. Most of the TTL ICs were removed and put into a GAL (an ATF16V8).
-- [Backplane](./Hardware/backplane/): I created an update of Joerg original backplane and added a flat-cable connector to it, so that you can have multiple backplanes connected together.
+- [Backplane](./Hardware/backplane/): I created an update of Joerg's original backplane and added a flat-cable connector to it, so that you can have multiple backplanes connected together.
+- [Main-Board](./Hardware/main_board/): I created an update of Joerg's original v3.1b main-board, most notable changes are: 1) one integrated eprom combining Monitor, Basic and BIOS 2) ATF1504 MMU added that supports 512K RAM with 28 RAM-banks of 16K each 3) Monitor, BIOS and Basic ROM are now switchable from MMU, enabling RAM behind it 4) Additional 6522 VIA 5) UART-to-USB bridge added.
 
 # Software projects
 
