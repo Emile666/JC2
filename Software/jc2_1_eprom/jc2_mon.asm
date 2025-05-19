@@ -602,9 +602,9 @@ LEN     .byte   $02
         .byte   $03
         .byte   $03
 
-NMI     JMP     (NMIVECT)	; Jump to a user selectable NMI vector
-IRQ     JMP     (IRQVECT)	; Jump to a user selectable IRQ vector
+; NMI and IRQ JMP vectors are now moved to jc2_main.asm
 
+	ORG	$1F35		; maintain compatibility with original Monitor
 ;----------------------------------------------------------------------------
 ;       GETLBL is an assembler subroutine. It searches for labels on the
 ;       symbol pseudo stack. If this stack contains a valid label, it returns

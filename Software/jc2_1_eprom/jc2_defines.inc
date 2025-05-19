@@ -174,17 +174,6 @@ VPU_REG0        EQU     $80             ; VPU register 0
 VPU_REG15       EQU     VPU_REG0+15     ; VPU status register pointer
 VPU_STAT0       EQU     0               ; VPU status register 0
 
-
-;------------------------------------------------------------------------------
-; $1800 - $19FF 512 Bytes, this was previously unused, with the new MMU this
-; has become RAM.
-;------------------------------------------------------------------------------
-PPORTLOAD	EQU	$1800		; jump location for test code
-PPORTSAVE	EQU	$1803		; jump location for test code
-CF_LOAD_VEC	EQU	$1806		; 2-byte vector for CF-card LOAD vector
-CF_SAVE_VEC	EQU	$1808		; 2-byte vector for CF-card SAVE vector
-RETURN_VECT     EQU     $180A           ; 2-byte return vector to monitor caller (moved from $01 to avoid Basic collision)
-
 ;------------------------------------------------------------------------------
 ; Junior Computer ][ BIOS & Monitor Address defines
 ;------------------------------------------------------------------------------ 
@@ -202,11 +191,14 @@ CARD3BASEH	EQU	$19		;K2 = $08, K3 = $0C, K4 = $10
 
 ;-----------------------------------------------------------------------------
 ; Addresses up to $9C are in use by BASIC, see jc2_basic.asm
+; Addresses from $A0 up to $AF are in use by DOS and boot.sys
 ;-----------------------------------------------------------------------------
+
 DEVID		EQU	$C9		; 1-byte temp device id (moved from $03 to avoid Basic collision)
 PRSTR		EQU	$CA		; 2-bytes replacement for PSTR
-END_PTR		EQU	$CC		; ROM end-pointer (2 bytes)
+END_PTR		EQU	$CC		; ROM end-pointer (2 bytes), also used by BASIC
 ROM_PTR		EQU	$CE		; ROM pointer (2 bytes)
+FILE_PTR	EQU	$CE		; Start of file pointer (2 bytes), used by BASIC
 ROM_CS		EQU	$D0		; ROM checksum counter (2 bytes)
 CFLBA0          EQU     $D2		; CF-card LBA 0 [0:7]
 CFLBA1          EQU     $D3		; CF-card LBA 1 [8:15]
@@ -271,11 +263,8 @@ WBUF      	EQU   	$EC      	; ACIA character output buffer
 BITCNT		EQU	$ED		; TAPE current read bit count
 LABELS  	EQU     $EE   		; MON 1-byte Editor 
 PSAV            EQU     $EE		; MON
-Decss		EQU	$EF		; BASIC number to decimal string start LSB
 PCL		EQU	$EF		; CPU program counter Low
 
-
-Decssp1		EQU	$F0		; BASIC number to decimal string start MSB
 PCH		EQU	$F0		; CPU program counter High
 PREG		EQU	$F1		; CPU processor status register
 SPUSER		EQU	$F2		; CPU stack pointer
@@ -285,21 +274,16 @@ YREG		EQU	$F4		; CPU y-register
 XREG		EQU	$F5		; CPU x-register
 BYTES   	EQU     $F6   		; MON 1-byte Number of bytes to be displayed
 COUNT   	EQU     $F7   		; MON 1-byte
-ADREL		EQU	$F8		; BASIC end address low
 DIG0      	EQU   	$F8     	; 10^0 digit, used by NUMOUT and DEC2STR
 NUML      	EQU   	$F8     	; MON low number byte
 INL     	EQU     $F8   		; MON 1-byte hex display buffer
 INH     	EQU     $F9   		; MON 1-byte hex display buffer
-ADREH		EQU 	$F9		; BASIC end address high
 DIG1	  	EQU   	$F9	 	; 10^1 digit, used by NUMOUT and DEC2STR
 NUMH	  	EQU   	$F9	 	; MON high number byte
 POINT   	EQU     $FA   		; MON 2-byte
-ADRSL		EQU	$FA		; BASIC start address low
 DIG2      	EQU   	$FA     	; 10^2 digit, used by NUMOUT and DEC2STR
 ADRL      	EQU   	$FA     	; MON last address Low
 ADRH      	EQU   	$FB     	; MON last address High
-ADRSH		EQU	$FB		; BASIC start address high
-
 TEMP      	EQU   	$FC     	; MON temp storage
 TEMPX   	EQU     $FD   		; MON 1-byte temp. data-buffer
 YSAV      	EQU   	$FD     	; MON Y register storage
@@ -324,6 +308,27 @@ CTRL_REG  	EQU   	$1603    	; ACIA Control Register
 
 ; ATF1504 Memory Management Unit (MMU) Register ********************************
 MMU		EQU	$1700		; MMU Register
+
+;------------------------------------------------------------------------------
+; $1800 - $19FF 512 Bytes, this was previously unused, with the new MMU this
+; has become RAM.
+;------------------------------------------------------------------------------
+PPORTLOAD	EQU	$1800		; jump location for test code
+PPORTSAVE	EQU	$1803		; jump location for test code
+CF_LOAD_VEC	EQU	$1806		; 2-byte vector for CF-card LOAD vector
+CF_SAVE_VEC	EQU	$1808		; 2-byte vector for CF-card SAVE vector
+RETURN_VECT     EQU     $180A           ; 2-byte return vector to monitor caller (moved from $01 to avoid Basic collision)
+
+; INPBUF is the BASIC Input Buffer. It is defined from $1868 - $18FF
+INPBUF	  	EQU 	$1868		; change input buffer to last 151 bytes in page
+ccflag		EQU	INPBUF		; BASIC CTRL-C flag, 00 = enabled, 01 = dis
+ccbyte		EQU 	ccflag+1	; BASIC CTRL-C byte
+ccnull		EQU 	ccbyte+1	; BASIC CTRL-C byte timeout
+VEC_CC		EQU 	ccnull+1	; ctrl c check vector
+
+; Ibuffs can now be anywhere in RAM, ensure that the max length is < $80
+Ibuffs		EQU 	VEC_CC+$14	; start of input buffer after IRQ/NMI code
+Ibuffe		EQU 	Ibuffs+$7F	; end of input buffer
 
 ; RIOT RAM Area ****************************************************************
 IO_INFO         EQU     $1A00           ; Initialization info call for IO card

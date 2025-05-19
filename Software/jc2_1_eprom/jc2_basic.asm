@@ -1,5 +1,5 @@
 
-; Enhanced BASIC ver 2.26
+; Enhanced BASIC ver 2.27
 
 ; $E7E1 $E7CF $E7C6 $E7D3 $E7D1 $E7D5 $E7CF $E81E $E825
 
@@ -29,6 +29,7 @@
 ;	  - FALSE value stored to a variable after string compare is not exactly zero (LAB_LET)
 ;	  - Stack floor protection does not cater for background interrupts (LAB_1212)
 ;	  - Allow NEXT, LOOP & RETURN to find FOR, DO or GOSUB structures on stack (LAB_174D)
+; 2.27	  - INPBUF moved from $768 to $1868. Also moved Decss, Decssp1, ADREL, ADREH, ADRSL, ADRSH to lower ZP-addresses
 ; ********************************************************************************************************
 
 ; changes by Joerg Walke
@@ -302,7 +303,9 @@ Rbyte1			= Rbyte4+1	; most significant PRNG byte
 Rbyte2			= Rbyte4+2	; middle PRNG byte
 Rbyte3			= Rbyte4+3	; least significant PRNG byte
 
-I2Cstat			= $9C		; I2C read byte or ACK/NACK bit
+I2Cstat			= $9C		; BASIC I2C read byte or ACK/NACK bit
+Decss			= $9D		; BASIC number to decimal string start LSB (moved from $EF)
+Decssp1			= $9E		; BASIC number to decimal string start MSB (moved from $F0)
 
 ; token values needed for BASIC
 
@@ -447,43 +450,26 @@ TK_RES5		= TK_I2CIN+1		; RESERVED ###
 TK_RES6		= TK_RES5+1		; RESERVED ###
 
 ; offsets from a base of X or Y
-
 PLUS_0		= $00			; X or Y plus 0
 PLUS_1		= $01			; X or Y plus 1
 PLUS_2		= $02			; X or Y plus 2
 PLUS_3		= $03			; X or Y plus 3
 
 LAB_STAK	= $0100			; stack bottom, no offset
-
 LAB_SKFE	= LAB_STAK+$FE		; flushed stack address
 LAB_SKFF	= LAB_STAK+$FF		; flushed stack address
-
-;ccflag		= $1A10			; BASIC CTRL-C flag, 00 = enabled, 01 = dis
-
-ccflag		= INPBUF		; BASIC CTRL-C flag, 00 = enabled, 01 = dis
-ccbyte		= ccflag+1		; BASIC CTRL-C byte
-ccnull		= ccbyte+1		; BASIC CTRL-C byte timeout
-
-VEC_CC		= ccnull+1		; ctrl c check vector
-
-; Ibuffs can now be anywhere in RAM, ensure that the max length is < $80
-
-Ibuffs		= VEC_CC+$14		; start of input buffer after IRQ/NMI code
-
-;Ibuffe		= Ibuffs+$47		; end of input buffer
-
-Ibuffe		= Ibuffs+$7F		; end of input buffer
 
 Ram_base	= $2001			; start of user RAM (set as needed, should be page aligned)
 Stack_floor	= 16			; bytes left free on stack for background interrupts
 
+; INPBUF moved to jc2_defines.inc 
+
+; Constants defined for I2Cin() and I2Cout functions
 I2C_STA		= 1			; I2Cout Start command
 I2C_STAT	= 0			; I2Cin return I2Cstat value
 I2C_RD_ACK	= 1			; I2Cin Read + ACK
 I2C_RD_NAK	= 2			; I2Cin Read + NACK + Stop
 I2C_STO		= 3			; I2Cin Stop only
-
-INPBUF	  	= $768			; change input buffer to last 151 bytes in page 7
 
 ; BASIC cold start entry point
 ; new page 2 initialisation, copy block to ccflag on
@@ -1017,11 +1003,11 @@ LAB_1374
 	BEQ	LAB_134B		; go delete last character
 
 LAB_1378
-	CPX	#Ibuffe-Ibuffs	; compare character count with max
+	CPX	#Ibuffe-Ibuffs		; compare character count with max
 	BCS	LAB_138E		; skip store and do [BELL] if buffer full
 
 	STA	Ibuffs,X		; else store in buffer
-	INX					; increment pointer
+	INX				; increment pointer
 LAB_137F
 	JSR	LAB_PRNA		; go print the character
 	BNE	LAB_1359		; always loop for next character
@@ -7602,9 +7588,9 @@ LOAD_DEV
 SET_LOADADR
 	PHA
 	LDX	#$00
-	STX	ADRSL			; set load destination address low
+	STX	FILE_PTR		; set load destination address low
 	LDX	#$20
-	STX	ADRSH			; set load destination address high
+	STX	FILE_PTR+1		; set load destination address high
 	ORA	#$20			; it's a storage device
 	JSR	OPEN_DEVICE		; Open Device for Read/Write
 	PLA
@@ -7620,7 +7606,6 @@ CALL_LOAD
 	STX	Svarh
 	JSR	CLEAR_BASE
 	JMP	LAB_147A
-	RTS
 
 ; perform SAVE ****************************
 LAB_SAVE
@@ -7632,23 +7617,23 @@ SAVE_DEV
 SET_SAVEADR
 	PHA
 	LDX	#$00
-	STX	ADRSL
+	STX	FILE_PTR		; Start of File pointer LSB
 	LDX	#$20
-	STX	ADRSH
+	STX	FILE_PTR+1		; Start of File pointer MSB
 	LDX	Svarl
 	STX	Ram_base-1
-	STX	ADREL
+	STX	END_PTR			; End-address File pointer LSB
 	LDX	Svarh
 	STX	Ram_base
-	STX	ADREH
-	ORA	#$20
+	STX	END_PTR+1		; End-address File pointer MSB
+	ORA	#$20			; Disk-devices
 	JSR	OPEN_DEVICE		; Open Device for Read/Write
 	PLA
 	BEQ	CALL_SAVE
-	JSR	LAB_GETSTRPARM
+	JSR	LAB_GETSTRPARM		; X,Y = Ptr to Filename
 CALL_SAVE
 	LDA	#CMD_SAVE
-	JSR	CALL_CMD
+	JSR	CALL_CMD		; Device-driver Write
 CLEAR_BASE
 	LDX	#$00
 	STX	Ram_base-1
@@ -7990,7 +7975,7 @@ StrTab
 EndTab
 
 LAB_MSZM
-	.by	'Enhanced BASIC 2.26',$0A,$00
+	.by	'Enhanced BASIC 2.27',$0A,$00
 ;	.byte	$0D,$0A,'Memory size ',$00
 
 LAB_SMSG

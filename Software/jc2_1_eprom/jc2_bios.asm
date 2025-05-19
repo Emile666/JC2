@@ -2165,7 +2165,7 @@ DETECT_IOL_CARD	LDA	#$00
 		
 DETECT_LP	LDY	#DDRB		; input & output regs are the same
 		STA	(IOBASE),Y
-		NOP
+		STY	ADRL		; reset databus
 		CMP	(IOBASE),Y	; Match only if 6522 VIA is present
 		BEQ	STOREBASE	; branch if a card is found
 		

@@ -276,10 +276,14 @@ TXT_MOD		.by     CR '    Model: ' $00
 
 ;----------------------------------------------------------------------------
 ; This function enables a RAM-bank at $4000-$7FFF.
-; Input: A: the RAM-bank number to enable [0..28]. A RAM-bank starts at 4,
+; Input: X: the RAM-bank number to enable [0..28]. A RAM-bank starts at 4,
 ;           so 0..3 disables the RAM-banks and enables main-memory
 ;----------------------------------------------------------------------------
-SET_RAMBANK	CMP	#29		; RAM-bank 28 is the highest nr
+SET_RAMBANK	LDA	MMU		; Get MMU register
+		AND	#$83		; Set RAM-bank bits 6..2 to 0
+		STA	MMU		; Update MMU register
+		TXA			; A is now RAM-bank number
+		CMP	#29		; RAM-bank 28 is the highest nr
 		BCS	SET_RAMB0	; branch if >= 29
 		CMP	#4		; <= 28, now check for >= 4
 		BCS	RAMBVLD		; branch if >= 4
