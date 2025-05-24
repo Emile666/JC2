@@ -1,5 +1,5 @@
 
-; Enhanced BASIC ver 2.27
+; Enhanced BASIC ver 2.28
 
 ; $E7E1 $E7CF $E7C6 $E7D3 $E7D1 $E7D5 $E7CF $E81E $E825
 
@@ -30,6 +30,8 @@
 ;	  - Stack floor protection does not cater for background interrupts (LAB_1212)
 ;	  - Allow NEXT, LOOP & RETURN to find FOR, DO or GOSUB structures on stack (LAB_174D)
 ; 2.27	  - INPBUF moved from $768 to $1868. Also moved Decss, Decssp1, ADREL, ADREH, ADRSL, ADRSH to lower ZP-addresses
+; 2.28	  Bugfix ADREL/ADREH, ADRSL/ADRSH. They had other names in BIOS, so should not be removed!
+;	  Bugfix MODE and NUML/NUMH no init. in LAB_LOAD.
 ; ********************************************************************************************************
 
 ; changes by Joerg Walke
@@ -7500,9 +7502,7 @@ LAB_LOD_FAC2_2
 	BNE	LAB_LOD_FAC2_2
 
 	;JSR	LAB_SUBTRACT
-	JSR	LAB_MULTIPLY
-
-	RTS
+	JMP	LAB_MULTIPLY		; call routine and return
 
 ; Call Device Command Routine *************
 CALL_CMD
@@ -7582,15 +7582,19 @@ LAB_I2C_ADR
 LAB_LOAD 
 	BNE	LOAD_DEV		; if no following token use device 0
 	LDA	#$00			; set device id = 0
-	BEQ	SET_LOADADR
+	BEQ	SET_LOADADR		; branch always
 LOAD_DEV
 	JSR	LAB_GETDEVPARM		; get device id
 SET_LOADADR
 	PHA
 	LDX	#$00
-	STX	FILE_PTR		; set load destination address low
+	STX	ADRL			; set load destination address low, needed by XModem routines
+	STX	NUML			; End-address File pointer LSB, needed by XModem routines
+	LDX	#>RAM_TOP		; Highest RAM load-address for BASIC
+	STX	NUMH			; End-address File pointer MSB, needed by XModem routines
 	LDX	#$20
-	STX	FILE_PTR+1		; set load destination address high
+	STX	ADRH			; set load destination address high, needed by XModem routines
+	STX	MODE			; Set to a non-zero value so that XModemRcv uses ADRL/ADRH as dest. address
 	ORA	#$20			; it's a storage device
 	JSR	OPEN_DEVICE		; Open Device for Read/Write
 	PLA
@@ -7616,16 +7620,16 @@ SAVE_DEV
 	JSR	LAB_GETDEVPARM		; get device id
 SET_SAVEADR
 	PHA
-	LDX	#$00
-	STX	FILE_PTR		; Start of File pointer LSB
-	LDX	#$20
-	STX	FILE_PTR+1		; Start of File pointer MSB
+	LDX	#$00			; Basic-files start at $2000
+	STX	ADRL			; Start of File pointer LSB, needed by XModem routines
+	LDX	#$20			
+	STX	ADRH			; Start of File pointer MSB, needed by XModem routines
 	LDX	Svarl
 	STX	Ram_base-1
-	STX	END_PTR			; End-address File pointer LSB
+	STX	NUML			; End-address File pointer LSB, needed by XModem routines
 	LDX	Svarh
 	STX	Ram_base
-	STX	END_PTR+1		; End-address File pointer MSB
+	STX	NUMH			; End-address File pointer MSB, needed by XModem routines
 	ORA	#$20			; Disk-devices
 	JSR	OPEN_DEVICE		; Open Device for Read/Write
 	PLA
@@ -7672,8 +7676,7 @@ LAB_PLIST
 	PLA				; restore token
 	JSR 	LAB_LIST		; call list command
 	LDA	STDOUTDEV		; get standard output device id
-	JSR	SET_STDOUTID		; and set it as standard output device
-	RTS
+	JMP	SET_STDOUTID		; and set it as standard output device and return
 
 ; perform DOS ****************************
 LAB_DOS					; If no DOS is loaded, this could hang the system!
@@ -7681,28 +7684,29 @@ LAB_DOS					; If no DOS is loaded, this could hang the system!
 
 ; perform HOME ****************************
 LAB_HOME
-	LDA	#CMD_HOME
-	JMP 	(STDCMD)		; Call Junior Computer standard HOME routine
+	LDA	#CMD_HOME		; Call Junior Computer standard HOME routine
+	BNE	STDCMD_JMP		; branch always
 
 ; perform CLS *****************************
 LAB_CLS
-	LDA	#CMD_CLRSCRN
-	JMP 	(STDCMD)		; Call Junior Computer standard CLS routine
+	LDA	#CMD_CLRSCRN		; Call Junior Computer standard CLS routine
+	BNE	STDCMD_JMP		; branch always
 
 ; perform NORMAL **************************
 LAB_NORMAL
-	LDA	#CMD_NORMAL
-	JMP 	(STDCMD)		; Call Junior Computer standard NORMAL routine
+	LDA	#CMD_NORMAL		; Call Junior Computer standard NORMAL routine
+	BNE	STDCMD_JMP		; branch always
 
 ; perform INVERSE *************************
 LAB_INVERSE
-	LDA	#CMD_INVERSE
-	JMP 	(STDCMD)		; Call Junior Computer standard INVERSE routine
+	LDA	#CMD_INVERSE		; Call Junior Computer standard INVERSE routine
+	BNE	STDCMD_JMP		; branch always
 
 ; perform FLASH ***************************
 LAB_FLASH
-	LDA	#CMD_FLASH
-	JMP 	(STDCMD)		; Call Junior Computer standard FLASH routine
+	LDA	#CMD_FLASH		; Call Junior Computer standard FLASH routine
+STDCMD_JMP
+	JMP 	(STDCMD)		; call STDOUT routine
 	
 ; perform LOCATE **************************
 LAB_LOCATE
@@ -7757,8 +7761,7 @@ LAB_WRITEI2C
 	JSR	I2C_WRITE_DEV		; Write I2C Device, set write mode. C = 1 acknowledged
 	LDA	Temp1			; restore data byte to A
 	JSR	I2C_SEND		; Send a Byte to I2C Device, C = 1 acknowledged
-	JSR	I2C_STOP		; Send I2C Stop Condition
-	RTS
+	JMP	I2C_STOP		; Send I2C Stop Condition and return
 
 ; perform I2C write operations ************
 LAB_I2COUT
@@ -7975,7 +7978,7 @@ StrTab
 EndTab
 
 LAB_MSZM
-	.by	'Enhanced BASIC 2.27',$0A,$00
+	.by	'Enhanced BASIC 2.28',$0A,$00
 ;	.byte	$0D,$0A,'Memory size ',$00
 
 LAB_SMSG

@@ -198,7 +198,6 @@ DEVID		EQU	$C9		; 1-byte temp device id (moved from $03 to avoid Basic collision
 PRSTR		EQU	$CA		; 2-bytes replacement for PSTR
 END_PTR		EQU	$CC		; ROM end-pointer (2 bytes), also used by BASIC
 ROM_PTR		EQU	$CE		; ROM pointer (2 bytes)
-FILE_PTR	EQU	$CE		; Start of file pointer (2 bytes), used by BASIC
 ROM_CS		EQU	$D0		; ROM checksum counter (2 bytes)
 CFLBA0          EQU     $D2		; CF-card LBA 0 [0:7]
 CFLBA1          EQU     $D3		; CF-card LBA 1 [8:15]
