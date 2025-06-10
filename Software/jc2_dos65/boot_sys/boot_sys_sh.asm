@@ -94,9 +94,9 @@ UPPERCASE_END   RTS				; return
 ; **** Print Two Digit Number **************************************************
 ; Input: A - Number (0..99)
 ; ******************************************************************************
-NUMOUT          JSR     DEC2STR
+NUMOUT          JSR     DEC2STR			; Converts into DIG0, DIG1 and DIG2
                 LDX     #$01
-NEXT_NUMOUT     LDA     NUM32,X
+NEXT_NUMOUT     LDA     DIG0,X			
                 JSR     COUT
 		DEX.PL	NEXT_NUMOUT		; branch if not done yet
                 RTS				; return
@@ -250,9 +250,8 @@ PRINT_YEAR      JSR     NUMOUT
 ; ******************************************************************************
 PRINT_TIME      LDY     #D_LAST_WR_TIME     		; index to file Last write time
                 MVA     (CURR_DIR_ENTRY),Y MINUTE	; load file last write time low byte
-                STA     MINUTE
                 INY
-                LDA     (CURR_DIR_ENTRY),Y  ; load file last write time high byte
+                LDA     (CURR_DIR_ENTRY),Y  		; load file last write time high byte
         .rept 3
 		LSR     
                 ROR     MINUTE
@@ -320,7 +319,7 @@ SET_DIGIT2      PLP
 		
 PRINT_SPACE     JSR     SPCOUT              ; print space
                 CLC
-                BCC     NEXT_DIGIT	    ; 
+                BCC     NEXT_DIGIT	    ; branch always
 		
 PRINT_DIGIT     JSR     HEXDIG              ; print single digit
                 SEC                         ; no more leading 0s
@@ -628,7 +627,11 @@ PRINT_RESULT    JSR     CROUT			; Print CR
 		LDXY	CURR_DIR_CNT		; nr of directories
                 JSR     PRINT_INT16		; Print as word
                 PRSTR   MSG_DIR_COUNT		; print ' dir(s)'
-
+		MVAX	4 FREE_KB NUM32		; NUM32 = #Free KB
+		JSR	PRINT_INT32		; Print as decimal number
+		PRSTR	TXT_KB			; Print ' KB free'
+		RTS				; return
+		
 ; **** Create Directory (MKDIR) Command ****************************************
 ;
 ; ******************************************************************************
@@ -693,7 +696,8 @@ CPFNCNT		INY
 FN83_DOTFND	; Found a dot
 		LDX	#8
 		INY				; points to char next to '.'
-CPFN83_2	LDA	(ssptr_l),Y		; Get extension char.
+CPFN83_2	LDA	(ssptr_l),Y		; Get char of extension
+		JSR	UPPERCASE		; Convert to upper-case (only affects A)
 		STA.EQ	FILENAME,X EXT_DN	; Store in extension, branch if '\0' (done)
 		INY
 		INX
@@ -701,9 +705,10 @@ CPFN83_2	LDA	(ssptr_l),Y		; Get extension char.
 		
 		MVA	#0 FILENAME,X		; Add '\0' to filename
 EXT_DN		LDY	#0
-CPFN83_3	MVA	(ssptr_l),Y FILENAME,Y
+CPFN83_3	LDA	(ssptr_l),Y		; Get char of Filename
+		JSR	UPPERCASE		; Convert to upper-case (only affects A)
+		STA	FILENAME,Y		; Store in result
 		CMP.EQ	#'.' CPFN83_4		; branch if filename copied
-		
 		INY
 		CPY.NE	#8 CPFN83_3		; branch if not all chars copied
 		RTS				; return
@@ -717,10 +722,6 @@ CPFN_DN		RTS				; return
 ; ******************************************************************************
 CFC_LOAD	STXY	FNAME_PTR
 		PRSTR	TXT_LOAD		; Print 'CFC_LOAD'
-		;LDXY	FNAME_PTR
-		LDXY	ssptr_l
-		JSR	OS_STRING_OUT		; Print filename
-		JSR	SPCOUT			; Print CR
 		JSR	FNAME2FN83		; Convert filename to FN83 filename
 		PRCH	'['
 		LDXYI	FILENAME		; 
@@ -741,13 +742,29 @@ CFC_SAVE	STXY	FNAME_PTR
 		PRSTR	TXT_SAVE		; Print 'CFC_SAVE'
 		PRHEX16	$2000			; Print end-address
 		JSR	SPCOUT		
-		LDXY	FNAME_PTR
-		JSR	OS_STRING_OUT		; Print filename
+		JSR	FNAME2FN83		; Convert filename to FN83 filename
+		PRCH	'['
+		LDXYI	FILENAME		; 
+		JSR	OS_STRING_OUT		; Print FN83 filename
+		PRCH	']'
+		SBW	$2000 #$2000		; Get net file-size
+		LSR	$2001			; $2000 now contains #sectors of 512 bytes needed
+		LDA	D_SECT_PER_CLST		; Convert to #clusters
+DIV_SPC		LSR	$2001			; $2000 = $2000 / D_SECT_PER_CLST
+		LSR
+		BNE	DIV_SPC			; branch if not done with shifting
+		
+		LDA.EQ	$2000 NO_ADD_SEC
+		INC 	$2001			; add 1 if last part of file is not empty
+NO_ADD_SEC	PRSTR	TXT_CLND		; Print 'Clusters needed: '
+		LDA	$2001			; Get cluster count
+		JSR	NUMOUT			; Print #clusters needed
 		JSR	CROUT
 		SEC				; C=1: OK
 		RTS				; return
 
 TXT_SAVE	.by	'CFC_SAVE: $' $00
+TXT_CLND	.by	', clusters needed: ' $00
 
 ; **** Add subdir name to D_SUBDIR_NAME ****************************************
 ; Check if directory entered is current dir (..).
@@ -938,7 +955,6 @@ CMP_EXT_COM     LDA     EXT_COM,Y           	; check if COM file
 CHK_BASF	LDY     #$02
 CMP_EXT_BAS     LDA     EXT_BAS,Y           	; check if .BAS file
                 CMP.NE  FILENAME+8,Y CHK_EXEF	; Not a .BAS file, check .EXE file next
-
                 DEY.PL  CMP_EXT_BAS	    	; branch if not done yet
                 
 		MVA	#0 FTYPE	    	; 0 = .BAS file
@@ -947,25 +963,24 @@ CMP_EXT_BAS     LDA     EXT_BAS,Y           	; check if .BAS file
 CHK_EXEF	LDY     #$02
 CMP_EXT_EXE     LDA     EXT_EXE,Y           	; check if .EXE file
                 CMP.NE  FILENAME+8,Y SH_RUN_END	; all 3 extensions do not exist
-
-                DEY.PL	CMP_EXT_EXE	    ; branch if not done yet
+                DEY.PL	CMP_EXT_EXE	    	; branch if not done yet
                 
-		MVA	#2 FTYPE	    ; 2 = .EXE file
-SH_RUN_FF       JSR     OS_FIND_FILE        ; check if file with this extension exists
-                BCS     SH_RUN3             ; yes, load file
+		MVA	#2 FTYPE	    	; 2 = .EXE file
+SH_RUN_FF       JSR     OS_FIND_FILE        	; check if file with this extension exists
+                BCS     SH_RUN3             	; yes, load file
 
-                JSR     SH_SET_SYS_DIR      ; no, search in system directory
-                BCC     SH_RUN_ERR          ; system directory does not exist
+                JSR     SH_SET_SYS_DIR      	; no, search in system directory
+                BCC     SH_RUN_ERR          	; system directory does not exist
 
-SH_RUN2         JSR     OS_FIND_FILE	    ; find file with this extension in root-dir
-                BCS     SH_RUN3		    ; branch if found
+SH_RUN2         JSR     OS_FIND_FILE	    	; find file with this extension in root-dir
+                BCS     SH_RUN3		    	; branch if found
 
-SH_RUN_ERR      JSR     CROUT		    ; print CR
-                JSR     SH_FILE_ERR         ; file does not exist
-                BCC     SH_RUN_END	    ; branch always
+SH_RUN_ERR      JSR     CROUT		    	; print CR
+                JSR     SH_FILE_ERR         	; file does not exist
+                BCC     SH_RUN_END	    	; branch always
 
-SH_RUN3         JSR     OS_LOAD_FILE	    ; Load .bas file or load/run .com/.exe file
-SH_RUN_END      JMP     LOAD_ACT_DIR        ; restore actual directory LBA and return
+SH_RUN3         JSR     OS_LOAD_FILE	    	; Load .bas file or load/run .com/.exe file
+SH_RUN_END      JMP     LOAD_ACT_DIR        	; restore actual directory LBA and return
                 
 ; **** Set System Directory ****************************************************
 ; Output: C = 0 - Error
@@ -1006,18 +1021,30 @@ SH_WRITE_ERR    PR_ERR  MSG_WRITE_ERR 		; 'Write error' message
 INIT_SIS_BUF	MWA	#SIS_BUFF BLKBUF	; macro BLKBUF = SIS_BUF
 		RTS
 
-
+;-------------------------------------------------------------------------------
+; Convert #Clusters to KB in FREE_KB
+; D_SECT_PER_CLST = 1: 2 CL =  2 SEC = 1 KB: SHR 1
+;                   2: 2 CL =  4 SEC = 2 KB: -
+;		    4: 2 CL =  8 SEC = 4 KB: SHL 1
+;		    8: 2 CL = 16 SEC = 8 KB: SHL 2 etcetera
+;-------------------------------------------------------------------------------
+CL2KB		LDA	D_SECT_PER_CLST			; #sectors per cluster
+		CMP.EQ	#2 CL2KB_X			; 2 sec/cl, just exit
+		CMP.EQ	#1 CL2KB_1			; 1 sec/cl, SHR 1
+	:2	LSR					; init nr of shifts		
+CL2KB_SHL	ASL32	FREE_KB				; SHL 1 of FREE_KB
+		LSR
+		BNE	CL2KB_SHL			; branch if not done with shifting
+		RTS					; return
+		
+CL2KB_1		LSR32	FREE_KB				; SHR 1 of FREE_KB
+CL2KB_X		RTS					; return
+		
 ; Get Info from System Information Sector **************************************
 GET_SIS		JSR	INIT_SIS_BUF			; Init SIS Buffer for CMD_READ command
 		LDXYI	D_PART_START			; macro Ptr(X,Y) = D_PART_START
 		JSR 	DEV_RD_LBLK           		; Read Volume ID again
 		MVAX	4 D_PART_START SYS_INFO_LBA	; SYS_INFO_LBA = D_PART_START
-		PRCH	'['
-		PRHEX32	SYS_INFO_LBA			; print SYS_INFO_LBA as 32 bit hex number
-		PRCH	'|'
-		PRHEX16	SIS_OFFSET			; print SIS_OFFSET as 16 bit hex number
-		PRCH	']'
-		
 		ADW	SYS_INFO_LBA SIS_OFFSET		; SYS_INFO_LBA = D_PART_START + *SIS_OFFSET
 		LDA	SYS_INFO_LBA+2			; update high word of SYS_INFO_LBA
 		ADC	#0
@@ -1026,31 +1053,24 @@ GET_SIS		JSR	INIT_SIS_BUF			; Init SIS Buffer for CMD_READ command
 		ADC	#0
 		STA	SYS_INFO_LBA+3
 		
-		PRSTR	TXT_SYS_INFO			; print SYS_INFO_LBA
-		PRHEX32	SYS_INFO_LBA			; macro print SYS_INFO_LBA as 32 bit hex number
+;		PRSTR	TXT_SYS_INFO			; print SYS_INFO_LBA
+;		PRHEX32	SYS_INFO_LBA			; print SYS_INFO_LBA as 32 bit hex number
 
 		JSR	INIT_SIS_BUF			; Init SIS Buffer for CMD_READ command
 		LDXYI	SYS_INFO_LBA			; Read Sys. Info. Sector into SIS-buffer
 		JSR 	DEV_RD_LBLK           		; Read SIS sector
 		PRSTR	TXT_FFREE_CLST			; print 'First Free Cluster:$'
 		PRHEX32	SIS_BUFF+$01EC
-		PRSTR	TXT_FREE_KB			; print 'Free Clusters:'
-;		PRHEX32	SIS_BUFF+$01E8
-		MVAX	4 SIS_BUFF+$01E8 NUM32		; NUM32 = #Free Clusters
-		JSR	PRINT_INT32			; Print as decimal number
-		PRSTR	TXT_KB
-
-		LDXYI	TXT_FBAS
-		STXY	ssptr_l				; simulate BASIC call
-		JSR	CFC_LOAD			; DEBUG TEST
+		JSR	CROUT
+		MVAX	4 SIS_BUFF+$01E8 FREE_KB	
+		JSR	CL2KB				; Convert #clusters to KB and store in FREE_KB
 		RTS
 		
 SYS_INFO_LBA	.dword	$00000000
-TXT_SYS_INFO	.by	'SYS_INFO_LBA:$' $00
-TXT_FFREE_CLST	.by	', 1st Free Cluster:$' $00
-TXT_FREE_KB	.by	', Free Clusters:' $00
+FREE_KB		.dword	$00000000
+;TXT_SYS_INFO	.by	'SYS_INFO_LBA:$' $00
+TXT_FFREE_CLST	.by	'First free cluster:$' $00
 TXT_KB		.by	' KB free' CR $00
-TXT_FBAS	.by	'test.bas' $00
 
 WRITE_SIS	JSR	INIT_SIS_BUF			; Init SIS Buffer for CMD_READ command
 		LDXYI	SYS_INFO_LBA 			; Sys. Info. Sector LBA
@@ -1065,7 +1085,7 @@ MSG_LABEL       .by    'Volume in drive ' $00
 MSG_LABEL2      .by    ' is ' $00
 MSG_DIR_ENTRY   .by    '          <DIR>' $00
 MSG_FILE_COUNT  .by    ' File(s)  ' $00
-MSG_DIR_COUNT   .by    ' Dir(s)  ' CR $00
+MSG_DIR_COUNT   .by    ' Dir(s)   ' $00
 MSG_BYTE_USED   .by    ' bytes' CR $00
 MSG_DRIVE_ERR   .by    'Drive not found' CR $00
 MSG_FILE_ERR    .by    'File not found' CR $00

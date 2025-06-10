@@ -1,0 +1,404 @@
+mads 2.1.7 build 33 (1 Aug 24)
+Source: date.asm
+     1 				;---------------------------------------------------------------------------
+     2 				; DATE.COM program
+     3 				;---------------------------------------------------------------------------
+     4 						OPT h- ; do not add file header
+     5 						OPT f+ ; save as single block
+     6
+     7 = 0008			BS        	EQU     $08    		; backspace key
+     8 = 000D			CR              EQU     $0D             ; Carriage Return ASCII Code
+     9 = 0020			CENTURY		EQU	$20		; the 20th century. change to travel in time
+    10 = 002D			DATEDIV		EQU	'-'		; divider char for date string
+    11 = 00F2			DIVCHAR		EQU	$F2             ; current divider char (. or / for date : for time)
+    12
+    13 = 00EA			PSTR            EQU     $EA		; Used by STROUT and WRSTR routines
+    14 = 00EA			PSTRL     	EQU   	$EA      	; lower address byte of output string pointer
+    15 = 00EB			PSTRH     	EQU   	$EB      	; upper address byte of output string pointer
+    16 = 00F3			ACC		EQU	$F3		; accumulator
+    17 = 00F4			YREG		EQU	$F4		; y-register
+    18 = 00F5			XREG		EQU	$F5		; x-register
+    19 = 00F8			NUM32      	EQU   	$F8     	; low 32 bit number byte
+    20 = 00FC			TEMP      	EQU   	$FC     	; temp storage
+    21 = 00FD			YSAV      	EQU   	$FD     	; Y register storage
+    22
+    23 = 1400			STRBUF		EQU	$1400		; string buffer used by STRIN routine
+    24
+    25 = E003			MON_WARM_START	EQU  	$E003       	; BIOS monitor warm start
+    26 = E047			CIN		EQU	$E047		; Read Character Routine
+    27 = E052			COUT		EQU     $E052           ; print 1 character
+    28 = E05E			SPCOUT		EQU	$E05E		; Write single space char to terminal
+    29 = E062			STRIN		EQU	$E062		; Read string and store in STRBUF ($1400)
+    30 = E083			STROUT          EQU     $E083
+    31 = E085			WRSTR		EQU	$E085		; Write String From Index Routine
+    32 = E091			HEXOUT          EQU     $E091           ; print 2-byte hex number
+    33 = E283			WRITEDOW	EQU	$E283		; Write DOW, Mon=1 - Sun=7
+    34 = E292			READDOW		EQU	$E292		; Read DOW, Mon=1 - Sun=7
+    35 = E2B7			WRITEDATE2	EQU	$E2B7		; Write Date to RTC
+    36 = E2DE			READTIME        EQU     $E2DE		; Read Current time
+    37 = E2E2			READDATE        EQU     $E2E2		; Read Current date
+    38 = E543			LOADSTRING	EQU	$E543		; Load String pointer
+    39
+    40 				.if	USE_XMODEM = 1
+    41  00 30				.word	RUN_ADDR		; Needed for XMODEM lm command loading .bin files
+    42 				.endif
+    43 						ORG $3000		; .COM file loads to $3000 by DOS
+    44 					
+    45 				;----------------------------------------------------------------------------
+    46 				; This is the main program-entry
+    47 				;----------------------------------------------------------------------------
+    48 3000 A2 5D		RUN_ADDR 	LDX #<TXT_TITLE     	; Print title text
+    49 3002 A0 31				LDY #>TXT_TITLE     	;
+    50 3004 20 29 31				JSR SPRINT          	;
+    51
+    52 3007 20 1B 30				JSR PRINTFULLDATE	; Print current Date
+    53 300A A2 73				LDX #<TXT_INPUT     	; Print Enter new Date
+    54 300C A0 31				LDY #>TXT_INPUT     	;
+    55 300E 20 29 31				JSR SPRINT          	;
+    56 3011 20 52 30				JSR SETDATE		; Set new Date in RTC
+    57 						
+    58 3014 20 A3 31				JSR DAYOFWEEK		; Calc. day-of-Week
+    59 3017 20 83 E2				JSR WRITEDOW		; Write DOW into RTC
+    60 						;JMP MON_WARM_START	; back to Monitor program
+    61 301A 60					RTS			; Return to DOS
+    62 						
+    63 				;----------------------------------------------------------------------------
+    64 				; This routine prints the current date including the Day of the Week
+    65 				;----------------------------------------------------------------------------
+    66 301B 20 92 E2		PRINTFULLDATE	JSR	READDOW
+    67 301E 0A					ASL	
+    68 301F 0A					ASL	
+    69 3020 A8					TAY
+    70 3021 A9 2C				LDA  	#<(DAYS-4)
+    71 3023 85 EA				STA  	PSTRL
+    72 3025 A9 31				LDA  	#>(DAYS-4)
+    73 3027 85 EB				STA  	PSTRH
+    74 3029 20 85 E0				JSR	WRSTR
+    75 302C 20 5E E0				JSR	SPCOUT
+    76
+    77 				; **** Print Date **************************************************************
+    78 				; ******************************************************************************
+    79 302F A9 2D		PRINTDATE	LDA	#DATEDIV	; load divider char
+    80 3031 85 F2				STA	DIVCHAR
+    81 3033 20 E2 E2				JSR	READDATE	; read current date
+    82 3036 85 FC				STA	TEMP		; store year value in TEMP
+    83 3038 98					TYA
+    84 3039 20 4A 30				JSR	PRINTDIGIT	; print day
+    85 303C 8A					TXA
+    86 303D 20 4A 30				JSR	PRINTDIGIT	; print month
+    87 3040 A9 20				LDA	#CENTURY
+    88 3042 20 91 E0				JSR	HEXOUT		; print century
+    89 3045 A5 FC				LDA	TEMP
+    90 3047 4C 91 E0				JMP	HEXOUT		; print year
+    91
+    92 304A 20 91 E0		PRINTDIGIT	JSR	HEXOUT		; print digit
+    93 304D A5 F2		PRINTDIVCHAR	LDA	DIVCHAR		; print divider char
+    94 304F 4C 52 E0				JMP	COUT		; print and return
+    95
+    96 				;----------------------------------------------------------------------------
+    97 				; This routine sets a new date
+    98 				;----------------------------------------------------------------------------
+    99 3052 20 43 E5		SETDATE		JSR	LOADSTRING
+   100 3055 A9 2D				LDA	#'-'
+   101 3057 85 F2				STA	DIVCHAR
+   102 3059 A2 4C				LDX 	#<DATE_INPUT     	; Print title text
+   103 305B A0 31				LDY 	#>DATE_INPUT     	;
+   104 305D 20 29 31				JSR 	SPRINT          	;
+   105 						
+   106 3060 A0 31				LDY	#$31			
+   107 3062 20 8B 30				JSR	GETDIGIT
+   108 3065 C9 0D				CMP	#CR
+   109 3067 F0 21				BEQ	SETDATEX		; Exit if CR pressed
+   110 						
+   111 3069 85 F4				STA	YREG			; YREG = Day
+   112 306B 20 4D 30				JSR	PRINTDIVCHAR
+   113 306E A0 12				LDY	#$12
+   114 3070 20 8B 30				JSR	GETDIGIT
+   115 3073 C9 0D				CMP	#CR
+   116 3075 F0 13				BEQ	SETDATEX		; Exit if CR pressed
+   117 						
+   118 3077 85 F5				STA	XREG			; XREG = Month
+   119 3079 20 4D 30				JSR	PRINTDIVCHAR
+   120 307C A0 99				LDY	#$99
+   121 307E 20 8B 30				JSR	GETDIGIT
+   122 3081 C9 0D				CMP	#CR
+   123 3083 F0 05				BEQ	SETDATEX		; Exit if CR pressed
+   124
+   125 3085 85 F3				STA	ACC			; ACC = Year
+   126 3087 4C B7 E2				JMP	WRITEDATE2		; Write to RTC
+   127 						
+   128 308A 60			SETDATEX	RTS				; Return
+   129
+   130 				;----------------------------------------------------------------------------
+   131 				; This routine gets a digit or a CR
+   132 				;----------------------------------------------------------------------------
+   133 308B C8			GETDIGIT	INY
+   134 308C 84 FD				STY	YSAV
+   135 308E 20 D3 30		GETDIGIT1	JSR	NUMINPUT	; Get Digit
+   136 3091 C9 0D				CMP	#CR		; Exit if CR
+   137 3093 D0 01				BNE	GDIG1		; Branch if not a CR
+   138 						
+   139 3095 60					RTS			; Return, A = CR
+   140 						
+   141 3096 E0 00		GDIG1		CPX	#0		; 0 = Not a number
+   142 3098 F0 F4				BEQ	GETDIGIT1	; Branch if not a number or CR
+   143 						
+   144 309A AA					TAX
+   145 309B E9 30				SBC	#'0'
+   146 309D 0A					ASL	
+   147 309E 0A					ASL	
+   148 309F 0A					ASL	
+   149 30A0 0A					ASL	
+   150 30A1 C5 FD				CMP	YSAV
+   151 30A3 B0 E9				BCS	GETDIGIT1
+   152 						
+   153 30A5 85 FC				STA	TEMP
+   154 30A7 8A					TXA
+   155 30A8 20 52 E0				JSR	COUT
+   156 30AB 20 D3 30		GETDIGIT2	JSR	NUMINPUT	; Get Digit
+   157 30AE C9 0D				CMP	#CR		; Exit if CR
+   158 30B0 D0 01				BNE	GDIG2
+   159
+   160 30B2 60					RTS			; Return, A = CR
+   161
+   162 30B3 E0 00		GDIG2		CPX	#0		; 0 = Not a number
+   163 30B5 90 F4				BCC	GETDIGIT2	; Branch if not a number or CR
+   164 						
+   165 30B7 AA					TAX
+   166 30B8 E9 30				SBC	#'0'
+   167 30BA 05 FC				ORA	TEMP
+   168 30BC C5 FD				CMP	YSAV
+   169 30BE B0 EB				BCS	GETDIGIT2	; Branch if number too large
+   170 						
+   171 30C0 85 FC				STA	TEMP
+   172 30C2 A9 2D				LDA	#'-'
+   173 30C4 C5 F2				CMP	DIVCHAR
+   174 30C6 D0 04				BNE	GETDIGITEND
+   175 						
+   176 30C8 A5 FC				LDA	TEMP
+   177 30CA F0 DF				BEQ	GETDIGIT2
+   178
+   179 30CC 8A			GETDIGITEND	TXA
+   180 30CD 20 52 E0				JSR	COUT
+   181 30D0 A5 FC				LDA	TEMP
+   182 30D2 60					RTS
+   183
+   184 30D3 20 47 E0		NUMINPUT	JSR	CIN
+   185 30D6 C9 30				CMP	#'0'
+   186 30D8 90 04				BCC	NOTNUM
+   187 						
+   188 30DA C9 3A				CMP	#':'
+   189 30DC 90 03				BCC	ISNUM
+   190 						
+   191 30DE A2 00		NOTNUM		LDX 	#0		; X=0, not a number
+   192 30E0 60					RTS
+   193 30E1 A2 01		ISNUM		LDX	#1		; X=1, a number
+   194 30E3 60					RTS
+   195
+   196 				;----------------------------------------------------------------------------
+   197 				; This routine divides a 16-bit number by a 8-bit number by means of 
+   198 				; subtraction. 
+   199 				; Input: TELLER: 16-bit
+   200 				;        N8    :  8-bit divisor
+   201 				;        RESULT: 16 bit result
+   202 				;----------------------------------------------------------------------------
+   203 30E4 A9 00		DIVU16_8	LDA	#0
+   204 30E6 8D 8C 31				STA	RESULT
+   205 30E9 8D 8D 31				STA	RESULT+1	; result = 0
+   206 30EC AD 89 31		DIVULP		LDA	TELLER		; teller -= N8
+   207 30EF 38					SEC
+   208 30F0 ED 8B 31				SBC	N8		; Subtract 8-bit noemer
+   209 30F3 8D 89 31				STA	TELLER
+   210 30F6 AD 8A 31				LDA	TELLER+1	
+   211 30F9 E9 00				SBC	#0
+   212 30FB 8D 8A 31				STA	TELLER+1
+   213 30FE EE 8C 31				INC	RESULT		; teller++
+   214 3101 D0 03				BNE	DIV1
+   215 						
+   216 3103 EE 8D 31				INC	RESULT+1
+   217 3106 AD 8A 31		DIV1		LDA	TELLER+1
+   218 3109 D0 E1				BNE	DIVULP		; branch if more to divide
+   219 						
+   220 310B AD 89 31				LDA	TELLER
+   221 310E CD 8B 31				CMP	N8
+   222 3111 B0 D9				BCS	DIVULP		; branch if TELLER >= N8
+   223 						
+   224 3113 60					RTS			; RESULT now contains the result
+   225
+   226 				;**** Convert BCD Number To 8 Bit Binary ***************************************
+   227 				; INPUT:  A = BCD Number
+   228 				; Output: A = Binary Number
+   229 				; ******************************************************************************
+   230 3114 85 F8		BCD_TO_BIN      STA     NUM32               ; save BCD number
+   231 3116 29 F0		                AND     #$F0                ; and clear ones digit in A
+   232 3118 4A			                LSR                         ; calc tens digit * 8
+   233 3119 85 F9		                STA     NUM32+1             ; and store result
+   234 311B 4A			                LSR     
+   235 311C 4A			                LSR                         ; calc tens digit * 2
+   236 311D 18			                CLC
+   237 311E 65 F9		                ADC     NUM32+1             ; add it with tens digit * 8
+   238 3120 85 F9		                STA     NUM32+1             ; and store result
+   239 3122 A5 F8		                LDA     NUM32               ; reload BCD number int A
+   240 3124 29 0F		                AND     #$0F                ; and clear tens digit in A
+   241 3126 65 F9		                ADC     NUM32+1             ; finally add both result
+   242 3128 60			                RTS
+   243
+   244 				;----------------------------------------------------------------------------
+   245 				; This routine prints a string to the terminal: X=LSB, Y=MSB
+   246 				;----------------------------------------------------------------------------
+   247 3129 86 EA		SPRINT		STX PSTR	    	; LSB of text-pointer
+   248 312B 84 EB				STY PSTR+1	    	; MSB of text-pointer
+   249 312D 4C 83 E0				JMP STROUT	    	; BIOS print string routine
+   250
+   251 				;----------------------------------------------------------------------------
+   252 				; Text-strings needed for Printing
+   253 				;----------------------------------------------------------------------------
+   254 3130 4D 6F 6E 00		DAYS		.by	'Mon' $00
+   255 3134 54 75 65 00				.by	'Tue' $00
+   256 3138 57 65 64 00				.by	'Wed' $00
+   257 313C 54 68 75 00				.by	'Thu' $00
+   258 3140 46 72 69 00				.by	'Fri' $00
+   259 3144 53 61 74 00				.by	'Sat' $00
+   260 3148 53 75 6E 00				.by	'Sun' $00
+   261
+   262 314C 64 64 2D 6D 6D 2D + DATE_INPUT	.by	'dd' DATEDIV 'mm' DATEDIV 'yy' BS BS BS BS BS BS BS BS $00
+   263
+   264 315D 54 68 65 20 63 75 + TXT_TITLE	.by 'The current date is: ' $00
+   265 3173 0D 45 6E 74 65 72 + TXT_INPUT	.by CR 'Enter the new date: ' $00
+   266
+   267 				;----------------------------------------------------------------------------
+   268 				; Variables needed for Day-of-Week conversion
+   269 				;----------------------------------------------------------------------------
+   270 = 3189			TELLER		.ds 	2
+   271 = 318B			N8		.ds 	1
+   272 = 318C			RESULT		.ds 	2
+   273 318E 00 03 02 05 00 03 + TARR		.byte 	0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4
+   274 = 319A			YEAR		.ds 	2
+   275 = 319C			Y4		.ds 	2
+   276 = 319E			Y100		.ds 	2
+   277 = 31A0			Y400		.ds 	2
+   278 = 31A2			DOW		.ds	1
+   279
+   280 				;----------------------------------------------------------------------------
+   281 				;dayofweek(y, m, d)	/* 1 <= m <= 12, y > 1752 (in the U.K.) */
+   282 				;{
+   283 				;    static int t[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
+   284 				;    if ( m < 3 )
+   285 				;    {
+   286 				;        y -= 1;
+   287 				;    }
+   288 				;    return (y + y/4 - y/100 + y/400 + t[m-1] + d) % 7;
+   289 				;}
+   290 				;----------------------------------------------------------------------------
+   291 31A3 A5 F3		DAYOFWEEK	LDA	ACC
+   292 31A5 20 14 31				JSR	BCD_TO_BIN
+   293 31A8 85 F3				STA	ACC
+   294 31AA 18					CLC
+   295 31AB A9 D0				LDA	#<2000
+   296 31AD 65 F3				ADC	ACC
+   297 31AF 8D 9A 31				STA	YEAR
+   298 31B2 A9 07				LDA	#>2000
+   299 31B4 69 00				ADC	#0
+   300 31B6 8D 9B 31				STA	YEAR+1		; YEAR = 2000 + ACC
+   301 						
+   302 31B9 A5 F5				LDA	XREG		; XREG = month
+   303 31BB 20 14 31				JSR	BCD_TO_BIN
+   304 31BE 85 F5				STA	XREG
+   305 31C0 C9 03				CMP	#3
+   306 31C2 B0 11				BCS	HMON		; branch if month >= 3
+   307 						
+   308 31C4 38					SEC
+   309 31C5 AD 9A 31				LDA	YEAR
+   310 31C8 E9 01				SBC	#1
+   311 31CA 8D 9A 31				STA	YEAR
+   312 31CD AD 9B 31				LDA	YEAR+1
+   313 31D0 E9 00				SBC	#0
+   314 31D2 8D 9B 31				STA	YEAR+1		; YEAR -= 1
+   315 						
+   316 31D5 AD 9A 31		HMON		LDA	YEAR
+   317 31D8 8D 9C 31				STA	Y4
+   318 31DB AD 9B 31				LDA	YEAR+1
+   319 31DE 8D 9D 31				STA	Y4+1		; Y4 = YEAR
+   320 31E1 4E 9D 31				LSR	Y4+1
+   321 31E4 6E 9C 31				ROR	Y4
+   322 31E7 4E 9D 31				LSR	Y4+1
+   323 31EA 6E 9C 31				ROR	Y4		; Y4 = YEAR/4
+   324 						
+   325 31ED AD 9A 31				LDA	YEAR
+   326 31F0 8D 89 31				STA	TELLER
+   327 31F3 AD 9B 31				LDA	YEAR+1
+   328 31F6 8D 8A 31				STA	TELLER+1	; Y100 = YEAR
+   329 31F9 A9 64				LDA	#100
+   330 31FB 8D 8B 31				STA	N8		; divisor
+   331 31FE 20 E4 30				JSR	DIVU16_8	; divide year / 100
+   332 3201 AD 8C 31				LDA	RESULT
+   333 3204 8D 9E 31				STA	Y100		; y100 = year / 100
+   334 3207 8D A0 31				STA	Y400		; y400 = year / 100
+   335 320A AD 8D 31				LDA	RESULT+1
+   336 320D 8D 9F 31				STA	Y100+1		; Y100 = YEAR/100
+   337 3210 8D A1 31				STA	Y400+1		; Y400 = YEAR/100
+   338 						
+   339 3213 4E A1 31				LSR	Y400+1
+   340 3216 6E A0 31				ROR	Y400
+   341 3219 4E A1 31				LSR	Y400+1
+   342 321C 6E A0 31				ROR	Y400		; Y400 = Y100/4 = YEAR/400
+   343 						
+   344 321F 18					CLC
+   345 3220 AD 9A 31				LDA	YEAR
+   346 3223 6D 9C 31				ADC	Y4
+   347 3226 8D 9A 31				STA	YEAR
+   348 3229 AD 9B 31				LDA	YEAR+1
+   349 322C 6D 9D 31				ADC	Y4+1
+   350 322F 8D 9B 31				STA	YEAR+1		; y = y + y/4
+   351 						
+   352 3232 38					SEC
+   353 3233 AD 9A 31				LDA	YEAR
+   354 3236 ED 9E 31				SBC	Y100
+   355 3239 8D 9A 31				STA	YEAR
+   356 323C AD 9B 31				LDA	YEAR+1
+   357 323F ED 9F 31				SBC	Y100+1
+   358 3242 8D 9B 31				STA	YEAR+1		; y = y + y/4 - y/100
+   359
+   360 3245 18					CLC
+   361 3246 AD 9A 31				LDA	YEAR
+   362 3249 6D A0 31				ADC	Y400
+   363 324C 8D 9A 31				STA	YEAR
+   364 324F AD 9B 31				LDA	YEAR+1
+   365 3252 6D A1 31				ADC	Y400+1
+   366 3255 8D 9B 31				STA	YEAR+1		; y = y + y/4 - y/100 + y/400
+   367 						
+   368 3258 A6 F5				LDX	XREG		; XREG = month
+   369 325A CA					DEX			; X = month-1
+   370 325B BD 8E 31				LDA	TARR,X 		; get t[m-1]
+   371 325E 18					CLC
+   372 325F 6D 9A 31				ADC	YEAR
+   373 3262 8D 9A 31				STA	YEAR
+   374 3265 AD 9B 31				LDA	YEAR+1
+   375 3268 69 00				ADC	#0
+   376 326A 8D 9B 31				STA	YEAR+1		; y = y + y/4 - y/100 + y/400 + t[m-1]
+   377 						
+   378 326D A5 F4				LDA	YREG		; YREG = Day
+   379 326F 20 14 31				JSR	BCD_TO_BIN
+   380 3272 85 F4				STA	YREG
+   381
+   382 3274 18					CLC
+   383 3275 6D 9A 31				ADC	YEAR
+   384 3278 8D 9A 31				STA	YEAR
+   385 327B 8D 89 31				STA	TELLER
+   386 327E AD 9B 31				LDA	YEAR+1
+   387 3281 69 00				ADC	#0
+   388 3283 8D 9B 31				STA	YEAR+1		; y = y + y/4 - y/100 + y/400 + t[m-1] + d
+   389 3286 8D 8A 31				STA	TELLER+1
+   390 						
+   391 3289 A9 07				LDA	#7		; divide by 7
+   392 328B 8D 8B 31				STA	N8
+   393 328E 20 E4 30				JSR	DIVU16_8	; YEAR / 7, with remainder in TELLER
+   394 3291 AD 89 31				LDA	TELLER
+   395 3294 D0 02				BNE	NOTSUNDAY	; branch if 1-6 (Mon-Sat)
+   396 						
+   397 3296 A9 07				LDA	#7		; 7 = Sunday for RTC
+   398 3298 8D A2 31		NOTSUNDAY	STA	DOW		; dow = (y + y/4 - y/100 + y/400 + t[m-1] + d) % 7
+   399 						
+   400 329B 60					RTS			; return
+   401 						
+   402 						

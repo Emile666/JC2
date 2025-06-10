@@ -57,7 +57,8 @@ RUN_ADDR 	LDX #<TXT_TITLE     	; Print title text
 		
 		JSR DAYOFWEEK		; Calc. day-of-Week
 		JSR WRITEDOW		; Write DOW into RTC
-		JMP MON_WARM_START	; back to Monitor program
+		;JMP MON_WARM_START	; back to Monitor program
+		RTS			; Return to DOS
 		
 ;----------------------------------------------------------------------------
 ; This routine prints the current date including the Day of the Week

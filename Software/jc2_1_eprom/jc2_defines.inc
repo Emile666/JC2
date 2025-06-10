@@ -196,7 +196,7 @@ CARD3BASEH	EQU	$19		;K2 = $08, K3 = $0C, K4 = $10
 
 DEVID		EQU	$C9		; 1-byte temp device id (moved from $03 to avoid Basic collision)
 PRSTR		EQU	$CA		; 2-bytes replacement for PSTR
-END_PTR		EQU	$CC		; ROM end-pointer (2 bytes), also used by BASIC
+END_PTR		EQU	$CC		; ROM end-pointer (2 bytes), also used by boot.sys
 ROM_PTR		EQU	$CE		; ROM pointer (2 bytes)
 ROM_CS		EQU	$D0		; ROM checksum counter (2 bytes)
 CFLBA0          EQU     $D2		; CF-card LBA 0 [0:7]

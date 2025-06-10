@@ -78,7 +78,8 @@ CALC_DIR_BLKS   LSR16	D_NUM_ROOT_DIR	     		; divide #root-dir entries by 16 to 
 
 ; **** Shell Entry Point *******************************************************
 ; ******************************************************************************
-OS_SHELL_ENTRY  JMP     SH_CMD_PROMPT
+OS_SHELL_ENTRY  JSR	GET_SIS		     		; Get sys. info sector		
+		JMP     SH_CMD_PROMPT			; start of command shell
 
 ; **** Read First Block Of Actual Directory ************************************
 ; The first block of D_ACTUAL_DIR cluster is read into DIR_BLK_BUF
@@ -266,28 +267,34 @@ COPY_BLK0_DEST	JSR	INIT_FBUF_PTR		; PSTR = Ptr(FILE_BUFF)
 		
 		; .EXE file (FTYPE=2)
 		MVA	FILE_BUFF OS_PROG	; load- and run-address LSB = FILE_BUFF LSB
-		STA	STOL			; destination address LSB
+		STA	END_PTR			; destination address LSB
 		MVA	FILE_BUFF+1 OS_PROG+1	; load- and run-address MSB = FILE_BUFF MSB
-		STA	STOH			; destination address MSB
+		STA	END_PTR+1		; destination address MSB
 		MVA	#<FILE_BUFF+2 PSTR	; load-address offset: start-address = 2nd byte in FILE_BUFF
 		BNE	COPY_BLK_DEST		; branch always
 		
 		; .COM file  (FTYPE=1)
 COMFILE		MVA	#<COM_RUN_ADDR OS_PROG	 ; Load- and run-address LSB
-		STA	STOL			 ; destination address LSB
+		STA	END_PTR			 ; destination address LSB
 		MVA	#>COM_RUN_ADDR OS_PROG+1	 ; load- and run-address MSB
-		STA	STOH			 ; destination address MSB
+		STA	END_PTR+1		 ; destination address MSB
 		BNE	COPY_BLK_DEST		 ; branch always
 		
 		; .BAS file (FTYPE=0)
-BASFILE		MWA	#BAS_LOAD_ADDR STOL	; destination = BAS_LOAD_ADDR
-
+BASFILE		MWA	#BAS_LOAD_ADDR END_PTR	; destination = BAS_LOAD_ADDR, 1st 2 bytes contain end-address
+		MVA	#<FILE_BUFF+2 PSTR	; skip first 2 bytes of .BAS file (contains $00 $20)
+		
 ; **** Copy Second and other blocks of File to Memory **************************
 ; Input:
 ; ******************************************************************************
-COPY_BLK_DEST	LDY	#0
-CP_BLK0_LP	MVA	(PSTR),Y (STOL),Y		; Get byte from buffer and store in destination
-		INW	STOL				; Increment destination pointer (macro)
+COPY_BLK_DEST	PRCH	'['
+		PRHEX16	PSTR
+		PRCH	','
+		PRHEX16	END_PTR
+		PRCH	']'
+		LDY	#0
+CP_BLK0_LP	MVA	(PSTR),Y (END_PTR),Y		; Get byte from buffer and store in destination
+		INW	END_PTR				; Increment destination pointer (macro)
 		INW	PSTR				; Increment buffer pointer (macro)
 		LDA	PSTR+1				; MSB of buffer pointer
 		CMP.NE	#>FILE_BUFF+2 CP_BLK0_LP		; branch if not 2 pages (512 bytes) increased yet
@@ -310,21 +317,21 @@ INIT_FBUF_PTR	MWA	#FILE_BUFF PSTR		; macro PSTR = FILE_BUFF
 ; **** Load BAS/COM/EXE File ***************************************************
 ; Input: CURR_CLUSTER: cluster nr of file to load
 ; ******************************************************************************
-OS_LOAD_FILE    JSR     OS_FILE_EMPTY       	; check if filesize is 0
-                BCC     OS_LOAD_COM2		; branch if file is not empty
+OS_LOAD_FILE    JSR     OS_FILE_EMPTY       		; check if filesize is 0
+                BCC     OS_LOAD_COM2			; branch if file is not empty
 		
-                RTS                         	; filesize is 0, just do nothing
+                RTS                         		; filesize is 0, just do nothing
 		
-OS_LOAD_COM2    LDXYI   CURR_CLUSTER      	; current cluster nr
-                JSR     CLSTR_TO_BLK        	; convert cluster number to LBA number in NUM32
-                MVA     #$00 BCNT              	; init. block counter
+OS_LOAD_COM2    LDXYI   CURR_CLUSTER      		; current cluster nr
+                JSR     CLSTR_TO_BLK        		; convert cluster number to LBA number in NUM32
+                MVA     #$00 BCNT              		; init. block counter
 		; Emile: This was apparently an error: SCNT was not initialized, now added here
-                MVA     D_SECT_PER_CLST SCNT   	; SCNT = numbers of sectors per cluster
-                LDY     #D_FILE_SIZE+1      	; index to file size in dir. entry
-                LDA     (CURR_DIR_ENTRY),Y  	; load file size byte 1
-                LSR                         	; check if bit 0 is set (bytes 256-511 of buffer)
-                PHA			    	; save byte: now contains file-size in blocks of 512 bytes
-                BCS     LOAD_COM1           	; yes, add one block
+                MVA     D_SECT_PER_CLST SCNT   		; SCNT = numbers of sectors per cluster
+                LDY     #D_FILE_SIZE+1      		; index to file size in dir. entry
+                LDA     (CURR_DIR_ENTRY),Y  		; load file size byte 1
+                LSR                         		; check if bit 0 is set (bytes 256-511 of buffer)
+                PHA			    		; save byte: now contains file-size in blocks of 512 bytes
+                BCS     LOAD_COM1           		; yes, add one block
 		
                 DEY					; now points to D_FILE_SIZE LSB
                 LDA.EQ  (CURR_DIR_ENTRY),Y LOAD_COM1	; load file size byte 0, branch if 0
@@ -339,19 +346,19 @@ LOAD_COM1       PLA
                 LDA.NE  (CURR_DIR_ENTRY),Y OS_SIZE_ERR 	; load D_FILE_SIZE+3, branch if > 0 -> file is too big
 		
 		; Read first part of file into FILE_BUFF
-		JSR	INIT_FILE_BUFF		; Set BLKBUF pointer to FILE_BUFF
-                LDXYI   NUM32		    	; NUM32 contains LBA of cluster to read
-                JSR     DEV_RD_LBLK         	; Read first block of file into FILE_BUFF
-		DEC     SCNT                	; First block is already read in
-		DEC	BCNT			; Number of blocks to read
-		JSR	COPY_BLK0_DEST		; Copy first block to destination
+		JSR	INIT_FILE_BUFF			; Set BLKBUF pointer to FILE_BUFF
+                LDXYI   NUM32		    		; NUM32 contains LBA of cluster to read
+                JSR     DEV_RD_LBLK         		; Read first block of file into FILE_BUFF
+		DEC     SCNT                		; First block is already read in
+		DEC	BCNT				; Number of blocks to read
+		JSR	COPY_BLK0_DEST			; Copy first block to destination
 		
-                JSR     LOAD_NEXT_BLKS	    	; Load next blocks of file and execute it
-                LDA     #HDD1_ID   	    	; Replace by D_DEV_ID?
-		JMP     OPEN_DEVICE		; Init. device driver again and return
+                JSR     LOAD_NEXT_BLKS	    		; Load next blocks of file and execute it
+                LDA     #HDD1_ID   	    		; Replace by D_DEV_ID?
+		JMP     OPEN_DEVICE			; Init. device driver again and return
 		
-OS_SIZE_ERR     LDXYI   MSG_SIZE_ERR      	; load error message...
-                JMP     OS_PRINT_ERR		; Print it
+OS_SIZE_ERR     LDXYI   MSG_SIZE_ERR      		; load error message...
+                JMP     OS_PRINT_ERR			; Print it
 
 ; **** Read Next File Blocks ***************************************************
 ; ******************************************************************************
@@ -365,10 +372,10 @@ LOAD_BLK0       JSR	INIT_FILE_BUFF		; Set BLKBUF pointer to FILE_BUFF
 		DEC.NE  SCNT LOAD_NEXT_BLKS    	; branch if more blocks in cluster to read
 
 ; next cluster needs to be loaded considering the volume FAT type **************
-NEXT_CLUSTER0   JSR     GET_NEXT_CLSTR	   	; Get next cluster from FAT table in CURR_CLUSTER
+NEXT_CLUSTER0   JSR     GET_NEXT_CLSTR	   	; Get next cluster from FAT table in CURR_CLUSTER.
                 BCS     OS_EXEC_CHK	    	; C=1, EOF, go execute File
 			
-                JSR     CLUSTER_TO_BLK	    	; convert CURR_CLUSTER to LBA number in NUM32
+                JSR     CLUSTER_TO_BLK	    	; convert CURR_CLUSTER to LBA number in NUM32.
                 MVA     D_SECT_PER_CLST SCNT   	; SCNT = numbers of sectors per cluster
                 JMP     LOAD_BLK0	    	; branch always
 		
@@ -386,8 +393,7 @@ OS_PROG         .word      $0000
                 
 ; ******************************************************************************
 INIT_FREE_CLUSTER
-		MVA     #$02 FREE_CLUSTER       ; first data cluster is $000002
-                MVA     #$00 FREE_CLUSTER+1
+		MWA	#$02 FREE_CLUSTER	; first data cluster is $000002
 		STA     FREE_CLUSTER+2
                 STA     FREE_CLUSTER+3
                 RTS

@@ -1,7 +1,7 @@
 ; ******************************************************************************
 ; The Micro (Disk) Operating System for 6502 Microprocessors
 ;
-; M/OS-65 System I, Version 0.2.3 by Joerg Walke, CF-IDE updates by Emile
+; M/OS-65 System I, Version 0.2.4 by Joerg Walke, CF-IDE updates by Emile
 ;
 ; Developed for the Junior Computer ][
 ;
@@ -21,7 +21,7 @@
 
 VERMAIN   	EQU     '0'    		; main version
 VERPSUB    	EQU     '2'    		; primary sub version
-VERSSUB		EQU	'3'		; secondary sub version
+VERSSUB		EQU	'4'		; secondary sub version
 
 ; List Of Changes **************************************************************
 ; V0.2.1: 11-04-25 Emile boot.asm renamed in bootcf.asm and adapted for CF-IDE interface.
@@ -29,6 +29,9 @@ VERSSUB		EQU	'3'		; secondary sub version
 ; V0.2.3: - OS_LOAD_COM renamed in OS_LOAD_FILE, now loads .bas, .com and .exe files
 ;         - Macro's added, start of code-reorganisation.
 ;	  - File (3350 lines) split in separate smaller files.
+; V0.2.4: - .BAS LOAD file now works, filename bug-fix and NUM32 bug-fix
+;	  - Bug-fix MKDIR run after DIR command
+;	  - SIS added + total KB printed with DIR command
 ; ******************************************************************************
 		OPT h- ; do not add file header
 		OPT f+ ; save as single block

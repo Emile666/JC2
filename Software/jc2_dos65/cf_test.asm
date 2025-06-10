@@ -21,6 +21,8 @@ CFREG4		EQU	CFBASE+4	; Sector address LBA 1 [8:15]
 CFREG5		EQU	CFBASE+5	; Sector address LBA 2 [16:23]
 CFREG6		EQU	CFBASE+6	; Sector address LBA 3 [24:27] (MSB)
 CFREG7		EQU	CFBASE+7	; Read: Status, Write: Command
+; CFREG7 Status: Bit7 Bit6 Bit5 Bit4 Bit3 Bit2 Bit1 Bit0
+;                BSY   RDY WFT  SKC  DRQ  ECC  IDX  ERR
 CFREG8		EQU	CFBASE+8	; A write with 0x00 is a HW reset
 
 ; $1B00-$1BFF is a 256-byte RAM area

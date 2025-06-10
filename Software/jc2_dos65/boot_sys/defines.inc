@@ -23,6 +23,9 @@ RES             EQU     ZP_BASE+14	; $AE
 ssptr_l		EQU	$78		; BASIC filename pointer LSB
 ssptr_h		EQU	$79		; BASIC filename pointer MSB
 
+NUM32      	EQU   	$C0     	; low 32 bit number byte (moved from $F8)
+SUM32           EQU     $C4             ; low 32 bit number byte (moved from $FC)
+END_PTR		EQU	$CC		; CFC_LOAD destination pointer, also used by BIOS ROM checksum routine
 SAVEX		EQU 	$D8		; Temp. save X register (same as BIOS)
 SAVEY		EQU	$D9		; Temp. save Y register (same as BIOS)
 BLKBUF		EQU	$DC
@@ -34,8 +37,9 @@ STOH      	EQU   	$E9     	; Store address High
 PSTR            EQU     $EA		; 2-byte ACIA output pointer, same in BIOS
 PSAV            EQU     $EE             ; Saved Partition Number in ASCII, same in BIOS
 
-NUM32      	EQU   	$F8     	; low 32 bit number byte
-SUM32           EQU     $FC             ; low 32 bit number byte
+DIG0      	EQU   	$F8     	; 10^0 digit, used by NUMOUT and DEC2STR
+DIG1	  	EQU   	$F9	 	; 10^1 digit, used by NUMOUT and DEC2STR
+DIG2      	EQU   	$FA     	; 10^2 digit, used by NUMOUT and DEC2STR
 
 STRBUF	  	EQU   	$1400    	; input string buffer at $1400 (same as BIOS)
 

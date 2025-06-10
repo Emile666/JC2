@@ -1,6 +1,7 @@
 ;---------------------------------------------------------------------------
 ;MKBOOT for CF-IDE Interface
-;V2: version for new Eprom BIOS V1.2.1 + bug-fix BIOS addresses + BOOT_CODE = $4000
+;V0.1: version for new Eprom BIOS V1.2.1 + bug-fix BIOS addresses + BOOT_CODE = $4000
+;V0.2: NUM32/SUM32 moved from $F8/$FC to $C0/$C3, same as boot.sys V0.23.
 ;---------------------------------------------------------------------------
         OPT h- ; do not add file header
         OPT f+ ; save as single block
@@ -16,12 +17,12 @@ PLBA		EQU	$E6		; 2-byte LBA pointer
 DST      	EQU   	$E8     	; 2-byte pointer to destination memory
 STOL		EQU	$E8		; Store address Low
 STOH		EQU	$E9		; Store address High
-PSTR            EQU     $EA
+PSTR            EQU     $EA		; 2-byte ACIA output pointer, same in BIOS
 CNT             EQU     $EC		; 2-byte counter
 PSAV            EQU     $EE
 
-NUM32      	EQU   	$F8     	; low 32 bit number byte
-SUM32           EQU     $FC             ; low 32 bit number byte
+NUM32      	EQU   	$C0     	; low 32 bit number byte, same as boot.sys V0.23
+SUM32           EQU     $C4             ; low 32 bit number byte, same as boot.sys V0.23
 YSAV            EQU     $FD             ; Temp Saved Device ID
 TEMP            EQU     $FF
 
@@ -967,7 +968,7 @@ SPRINT		STX PSTR	    	; LSB of text-pointer
 ;----------------------------------------------------------------------------
 ; Text strings for printing
 ;----------------------------------------------------------------------------
-TXT_TITLE	.by 	CR 'MKBOOT CF-IDE 0.1 for DOS-65' CR CR 
+TXT_TITLE	.by 	CR 'MKBOOT CF-IDE 0.2 for DOS-65' CR CR 
 		.by 	'Insert CF-Card and press <ENTER>' $00
 TXT_PART	.by 	CR 'Partition ' $00
 TXT_FMT		.by 	' format is ' $00	

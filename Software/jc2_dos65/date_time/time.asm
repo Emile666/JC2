@@ -52,7 +52,8 @@ RUN_ADDR 	LDX #<TXT_TITLE     	; Print title text
 		JSR SPRINT          	;
 		JSR SETTIME		; Set new Time in RTC
 		
-		JMP MON_WARM_START	; back to Monitor program
+		;JMP MON_WARM_START	; back to Monitor program
+		RTS			; return to DOS
 		
 ;----------------------------------------------------------------------------
 ; This routine sets a new time
