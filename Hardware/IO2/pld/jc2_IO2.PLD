@@ -1,0 +1,53 @@
+/*---------------------------------------------------------------*/
+/* Compiler       : WinCUPL                                      */
+/* HW Version     : IO-Language Card, MMU                        */
+/* Version history:                                              */
+/* V01: First development version.                               */
+/*---------------------------------------------------------------*/
+Name     JC2_IO2;
+PartNo   ATF22V10C ;
+Date     16-06-2025 ;
+Revision 01 ;
+Designer Emile ;
+Company  - ;
+Assembly None ;
+Location IC2 ;
+Device   g22v10 ;
+
+/* ******************************* INPUT PINS **********************************/
+PIN   1 = PHI2;                    /* CPU PHI2 clock-signal                    */ 
+PIN   2 = !KX;                     /* 0 = $0800-$0BFF address range selected   */ 
+PIN   3 = A9;                      /* A9 address line                          */
+PIN   4 = A8;                      /* A8 address line                          */
+PIN   5 = A7;                      /* A7 address line                          */ 
+PIN   6 = A6;                      /* A6 address line                          */ 
+PIN   7 = A5;                      /* A5 address line                          */ 
+PIN   8 = A4;                      /* A4 address line                          */ 
+PIN   9 = A3;                      /* A3 address line                          */ 
+PIN  10 = R_W;                     /* Read_Write signal from CPU               */ 
+PIN  11 = D0;                      /* Databus D0 signal from CPU               */ 
+/* PIN  13 = ;                                                                 */ 
+/* ******************************** OUTPUT PINS ********************************/
+PIN  14 = !KX1;                    /* !KX signal, delayed                      */ 
+PIN  15 = !KX2;                    /* !KX signal, delayed                      */ 
+PIN  16 = !KX3;                    /* !KX signal, delayed                      */ 
+PIN  17 = !KXD;                    /* !KX signal, delayed 30 nsec.             */ 
+/* PIN  18 = ;                                                                 */ 
+PIN  19 = !RST;                    /* !RST signal for CF-IDE interface         */ 
+PIN  20 = !DIOR;                   /* !DIOR signal for CF-IDE interface        */ 
+PIN  21 = !DIOW;                   /* !DIOW signal for CF-IDE interface        */ 
+PIN  22 = !VIA1_CS;                /* CS line for 1st VIA: $0800-$080F         */ 
+PIN  23 = !VIA2_CS;                /* CS line for 2nd VIA: $0810-$081F         */ 
+/* *****************************************************************************/
+
+KX1    = !KX;
+KX2    = !KX1;
+KX3    = !KX2;
+KXD    = !KX3;	/* Delayed !KX signal */
+
+VIA1_CS   = KX & !A9 & !A8 & !A7 & !A6 & !A5 & !A4;       /* $0800-$080F, U5, 6522 VIA */
+VIA2_CS   = KX & !A9 & !A8 & !A7 & !A6 & !A5 &  A4;       /* $0810-$081F, U4, 6522 VIA */
+
+DIOW      = KX & PHI2 & !A9 & !A8 & A7 & !A6 & !A5 & !A4 & !A3 & !R_W;       /* $0880-$0887 write */
+DIOR      = KX & PHI2 & !A9 & !A8 & A7 & !A6 & !A5 & !A4 & !A3 &  R_W;       /* $0880-$0887 read */
+RST       = KX & PHI2 & !A9 & !A8 & A7 & !A6 & !A5 & !A4 &  A3 & !R_W & !D0; /* $0888-$088F write 0 */

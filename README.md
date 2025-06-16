@@ -22,6 +22,7 @@ Since these projects nearly always contain a GAL or CPLD, the .pld files describ
 - [Compact-Flash IDE interface](./Hardware/cf_ide): The idea originated from the Atari XL CF-IDE interface. I changed it for the JC2. Most of the TTL ICs were removed and put into a GAL (an ATF16V8).
 - [Backplane](./Hardware/backplane/): I created an update of Joerg's original backplane and added a flat-cable connector to it, so that you can have multiple backplanes connected together.
 - [Main-Board](./Hardware/main_board/): I created an update of Joerg's original v3.1b main-board, most notable changes are: 1) one integrated eprom combining Monitor, Basic and BIOS 2) ATF1504 MMU added that supports 512K RAM with 28 RAM-banks of 16K each 3) Monitor, BIOS and Basic ROM are now switchable from MMU, enabling RAM behind it 4) Additional 6522 VIA 5) UART-to-USB bridge added.
+- [IO2-Board](./Hardware/IO2/): I created an update of Joerg's original rev. 1D IO-board, most notable changes are: 1) BASIC eprom moved to JC2 main-board and removed all diode-based logic 2) removed papertape reader, Datasette interface and ASCII-keyboard 3) Added 3 x 16-bits IO with MCP23017 ICs 4) Added SPI RAM (1024 Kb)  and I2C eeprom (512 Kb) 5) Added PCF8591 8-bit ADC and DAC 6) Added One-Wire Interface with DS2482 7) Added CF-IDE Interface 8) Level-shifting with BSS138 board instead of 74LVC245.
 
 # Software projects
 
