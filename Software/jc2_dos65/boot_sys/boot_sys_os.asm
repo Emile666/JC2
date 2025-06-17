@@ -362,38 +362,38 @@ OS_SIZE_ERR     LDXYI   MSG_SIZE_ERR      		; load error message...
 
 ; **** Read Next File Blocks ***************************************************
 ; ******************************************************************************
-LOAD_NEXT_BLKS  JSR     INC_32              	; Increment LBA block address in NUM32
-LOAD_BLK0       JSR	INIT_FILE_BUFF		; Set BLKBUF pointer to FILE_BUFF
-		LDXYI   NUM32		    	; NUM32 contains LBA of cluster to read
-                JSR     DEV_RD_LBLK         	; and read next block of file into FILE_BUFF
-		JSR	INIT_FBUF_PTR		; reset file-buffer pointer PSTR to FILE_BUFF again
-		JSR	COPY_BLK_DEST	    	; Copy block to destination
-                DEC.EQ  BCNT OS_EXEC_CHK      	; branch if no more blocks to read
-		DEC.NE  SCNT LOAD_NEXT_BLKS    	; branch if more blocks in cluster to read
+LOAD_NEXT_BLKS  JSR     INC_32              		; Increment LBA block address in NUM32
+LOAD_BLK0       JSR	INIT_FILE_BUFF			; Set BLKBUF pointer to FILE_BUFF
+		LDXYI   NUM32		    		; NUM32 contains LBA of cluster to read
+                JSR     DEV_RD_LBLK         		; and read next block of file into FILE_BUFF
+		JSR	INIT_FBUF_PTR			; reset file-buffer pointer PSTR to FILE_BUFF again
+		JSR	COPY_BLK_DEST	    		; Copy block to destination
+                DEC.EQ  BCNT OS_EXEC_CHK      		; branch if no more blocks to read
+		DEC.NE  SCNT LOAD_NEXT_BLKS    		; branch if more blocks in cluster to read
 
 ; next cluster needs to be loaded considering the volume FAT type **************
-NEXT_CLUSTER0   JSR     GET_NEXT_CLSTR	   	; Get next cluster from FAT table in CURR_CLUSTER.
-                BCS     OS_EXEC_CHK	    	; C=1, EOF, go execute File
+NEXT_CLUSTER0   JSR     GET_NEXT_CLSTR	   		; Get next cluster from FAT table in CURR_CLUSTER.
+                BCS     OS_EXEC_CHK	    		; C=1, EOF, go execute File
 			
-                JSR     CLUSTER_TO_BLK	    	; convert CURR_CLUSTER to LBA number in NUM32.
-                MVA     D_SECT_PER_CLST SCNT   	; SCNT = numbers of sectors per cluster
-                JMP     LOAD_BLK0	    	; branch always
+                JSR     CLUSTER_TO_BLK	    		; convert CURR_CLUSTER to LBA number in NUM32.
+                MVA     D_SECT_PER_CLST SCNT   		; SCNT = numbers of sectors per cluster
+                JMP     LOAD_BLK0	    		; branch always
 		
 ; Run file if needed ***********************************************************
 ; ******************************************************************************
-OS_EXEC_CHK	LDA.NE	FTYPE OS_EXECUTE	; 0 = .BAS, 1=.COM, 2=.EXE, branch if an executable file
-		RTS				; return in case of a .BAS file
+OS_EXEC_CHK	LDA.NE	FTYPE OS_EXECUTE		; 0 = .BAS, 1=.COM, 2=.EXE, branch if an executable file
+		RTS					; return in case of a .BAS file
 
 ; **** Execute File ************************************************************
 ; Input:  Ptr[OS_PROG] to Start Address
 ; Output: A - Result Code
 ; ******************************************************************************
-OS_EXECUTE      JMP     (OS_PROG)           	; run .com or .exe file
+OS_EXECUTE      JMP     (OS_PROG)           		; run .com or .exe file
 OS_PROG         .word      $0000
                 
 ; ******************************************************************************
 INIT_FREE_CLUSTER
-		MWA	#$02 FREE_CLUSTER	; first data cluster is $000002
+		MWA	#$02 FREE_CLUSTER		; first data cluster is $000002
 		STA     FREE_CLUSTER+2
                 STA     FREE_CLUSTER+3
                 RTS
@@ -562,7 +562,7 @@ TXT_CURR_CLST3	.by	'ADD_NEW_DIR_CLST, Free=$' $00
 
 ; **** Add First Cluster To Empty File *****************************************
 ; ******************************************************************************
-OS_ADD_CLUSTER  JSR	INIT_FREE_CLUSTER	; FREE_CLUSTER = 0L
+OS_ADD_CLUSTER  JSR	INIT_FREE_CLUSTER	; FREE_CLUSTER = 2L
 		JSR     OS_NEXT_FREE_CLUSTER	; Get free cluster in FREE_CLUSTER
                 BCC     ADD_CLUSTER_END     	; no free cluster found
 		
@@ -1022,9 +1022,8 @@ NOT_EMPTY     	CLC                         		; C=0, dir. entry is not empty
 CMD_ADDR        .word      $0000
                 
 ; String Data Area *************************************************************
-MSG_BOOT        .by    '...' CR CR
-                .by    ' Welcome to DOS-65 System I, Version '
-                .byte      VERMAIN,DOT,VERPSUB,DOT,VERSSUB,CR,CR
-                .by    ' 2023/25 by Joerg Walke' CR CR $00
+MSG_BOOT        .by    CR ' Welcome to DOS-65 System II, Version '
+                .byte  VERMAIN,DOT,VERPSUB,DOT,VERSSUB,CR,CR
+                .by    ' 2025 by Emile, original design by Joerg Walke' CR CR $00
 MSG_SIZE_ERR    .by    'Out of memory' CR $00
 FILENAME        .ds 	12

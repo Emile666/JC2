@@ -841,20 +841,97 @@ SH_CD_ERR       JSR     LOAD_ACT_DIR        	; error - restore actual directory 
                 JSR     CROUT			; print CR
                 JMP     SH_PATH_ERR		; Print 'Path not found'
 
+; **** Release the FAT clusters for a file  ************************************
+; Algorithm:
+;       SCNT = 1;
+; loop: CURR_CLUSTER = FAT[CURR_CLUSTER];
+;       FAT[CURR_CLUSTER] = 0L; // 0L = free entry
+;       if (CURR_CLUSTER == 0FFFFFFF) SCNT++; goto loop;
+; ******************************************************************************
+CLR_FAT32_FILE 	MVX 	#0 SCNT				; #clusters cleared
+CLR_FAT32_LP1	LDXYI   D_START_FAT1      		; load base block address of FAT into NUM32[0:3]
+                JSR     LOAD_32		    		; NUM32 = LBA nr. of FAT
+		LDXYI	(CURR_CLUSTER+1)			; SUM32 = CURR_CLUSTER into SUM32
+		JSR     LOAD_S32            		; load CURR_CLUSTER[1:3] into SUM[0:2] = FAT block index
+		JSR	PRTST1				; DEBUG
+		MVX	#$00 SUM32+3			; clear garbage byte SUM[3]: SUM32 = CURR_CLUSTER / 256
+                LDY     #$03
+                LDA     CURR_CLUSTER        		; load CURR_CLUSTER[0] = FAT entry index byte
+                ASL                         		; shift bit 7 into carry flag and multiply entry index by 2
+                PHA                         		; save entry index to stack
+CLR32_LP        ROL     SUM32,X+             		; shift bit 7 of entry index into bit 0 of block index
+                DEY.NE  CLR32_LP	    		; branch if not done yet
+		
+		; A FAT entry is 4 bytes and there are 128 FAT entries in one FAT-sector
+                JSR     ADD_32_32	    		; NUM32 = START_FAT1 + CURR_CLUSTER / 128
+                JSR     LOAD_FAT_BLK	    		; Load FAT sector into standard buffer ($600)
+                PLA                         		; restore entry index
+                LDX     #$04                		; four bytes to read for a FAT32 entry
+                ASL                         		; multiply entry index by 2 (4 in total now)
+                TAY                         		; store entry index into Y
+		JSR	HEXOUT				; DEBUG
+                MVX	#4 NCNT				; 1 FAT entry = 4 bytes
+		LDX	#0				; init. CURR_CLUSTER index
+LP_FAT_ENTRY    JSR     READ_ENTRY_BYTE     		; read entry byte
+		STA     TEMP_CLUSTER,X      		; store byte in TEMP_CLUSTER to follow link
+		JSR	WR_ENTRY_BYTE			; FAT[CURR_CLUSTER] = 0
+		INY					; Increment FAT index counter
+                INX					; Increment CURR_CLUSTER counter
+                DEC.NE  NCNT LP_FAT_ENTRY   		; loop until all bytes copied
+		MVAX	4 TEMP_CLUSTER CURR_CLUSTER	; CURR_CLUSTER = TEMP_CLUSTER
+		INC	SCNT				; #clusters cleared + 1
+		CPD	#$0FFFFFFF CURR_CLUSTER		; CURR_CLUSTER == $0FFFFFFF ?
+		BNE	CLR_FAT32_LP1			; branch if file has more clusters to clear
+		
+		LDXYI	CURR_FAT_BLK			; LBA of current FAT block
+		JMP	DEV_WR_LBLK_BUF			; write FAT block back to disk and return
+
+TEMP_CLUSTER	.dword	$00000000
+		
+PRTST1		PRCH	'<'
+		PRHEX32	CURR_CLUSTER
+		PRCH	'>'
+		RTS
+
+; **** Write a Single FAT Entry Byte From Block Buffer *************************
+; INPUT : Y - Index To FAT Entry Byte
+; OUTPUT: A = Read Byte from FAT table
+; ******************************************************************************
+WR_ENTRY_BYTE 	AND.NE  #$01 CURR_CLUSTER+1 CLR_UPPER_PAGE	; check bit 0 (= bit 7 of CURR_CLUSTER[0:3] because of ASL in FAT32 routine)
+                MVA	#0 BLOCK_BUFF,Y				; write entry byte from lower half of block buffer
+                RTS			    			; return
+CLR_UPPER_PAGE  MVA     #0 BLOCK_BUFF+256,Y    			; write entry byte from upper half of block buffer
+                RTS			    			; return
+
 ; **** Delete Command **********************************************************
 ;
 ; ******************************************************************************
+SH_DEL          JSR     SAVE_ACT_DIR        			; save actual directory LBA
+                LDXYI   NO_PARMS          			; we don't need parameters, just the filename
+                JSR     SH_GET_PARMS        			; get path
+                BCC     SH_DEL_X	    			; branch if no filename was given
 
-; ########## TEMP Checking for first free cluster #################
-SH_DEL          JSR 	INIT_FREE_CLUSTER	; FREE_CLUSTER = 0L
-                JSR 	OS_NEXT_FREE_CLUSTER
-		LDY 	#3
-PRINT_CURR_CLST PHY				; save Y
-		LDA 	FREE_CLUSTER,Y		; 
-                JSR 	HEXOUT			; Print FREE_CLUSTER
-		PLY				; restore Y
-		DEY.PL	PRINT_CURR_CLST		; print if not done yet
-                RTS
+                JSR     OS_FIND_FILE				; Now find file to delete
+                BCC     SH_DEL_ERR				; branch if file not found
+
+		; OS_FIND_FILE did already set CURR_CLUSTER to the file starting-cluster
+		LDY	#D_FILENAME
+		MVA	#$E5 (CURR_DIR_ENTRY),Y			; $E5 first char. is a deleted file
+		LDY	#D_START_CLSTH
+		MWA	#$00 (CURR_DIR_ENTRY),Y			; delete high word of file-size
+		PRHEX16	CURR_DIR_BLK
+		LDXYI	CURR_DIR_BLK				; CURR_DIR_BLK is LBA of current dir block
+                JSR     OS_SAVE_DIR	    			; write this dir entry back to disk
+		
+		JSR	CLR_FAT32_FILE				; Set all FAT entries for this file to 00000000 (free)
+		JSR	INIT_FREE_CLUSTER			; FREE_CLUSTER = 2L
+		JSR     OS_NEXT_FREE_CLUSTER			; Get first free cluster in FREE_CLUSTER
+
+		; Update SIS with #clusters freed and first-free cluster nr
+		JSR	WRITE_SIS				; Update SIS and write back
+SH_DEL_X        JMP     LOAD_ACT_DIR        			; error - restore actual directory LBA and return
+
+SH_DEL_ERR	JMP	SH_FILE_ERR				; Print 'File not found' and return
 
 ; **** Clear Screen Command ****************************************************
 ;
@@ -891,7 +968,15 @@ SH_GOTO         RTS
 ; **** If Command **************************************************************
 ;
 ; ******************************************************************************
-SH_IF           RTS
+SH_IF           JSR 	INIT_FREE_CLUSTER	; FREE_CLUSTER = 2L
+                JSR 	OS_NEXT_FREE_CLUSTER
+		LDY 	#3
+PRINT_CURR_CLST PHY				; save Y
+		LDA 	FREE_CLUSTER,Y		; 
+                JSR 	HEXOUT			; Print FREE_CLUSTER
+		PLY				; restore Y
+		DEY.PL	PRINT_CURR_CLST		; print if not done yet
+		RTS
 
 ; **** Rem Command *************************************************************
 ;
@@ -899,7 +984,7 @@ SH_IF           RTS
 SH_REM          PHW	BLKBUF			; DEBUG: For testing SIS routines
 		JSR	GET_SIS
 		PLW	BLKBUF
-		RTS
+SH_REM_X	RTS
                 
 ; **** BASIC Command ***********************************************************
 ; Executes Basic in ROM. Return with 'DOS' command. 
@@ -920,7 +1005,7 @@ SH_BRUN         JSR     SAVE_ACT_DIR        	; save actual directory LBA
                 BCC     SH_BRUN_END
 
                 JSR     OS_FIND_FILE
-                BCC     SH_BRUN_END
+                BCC     SH_BRUN_END		; branch if file not found
 
                 ;JSR     OS_LOAD_BIN
 SH_BRUN_END     JSR     LOAD_ACT_DIR        	; restore actual directory LBA
@@ -1053,28 +1138,34 @@ GET_SIS		JSR	INIT_SIS_BUF			; Init SIS Buffer for CMD_READ command
 		ADC	#0
 		STA	SYS_INFO_LBA+3
 		
-;		PRSTR	TXT_SYS_INFO			; print SYS_INFO_LBA
-;		PRHEX32	SYS_INFO_LBA			; print SYS_INFO_LBA as 32 bit hex number
-
 		JSR	INIT_SIS_BUF			; Init SIS Buffer for CMD_READ command
 		LDXYI	SYS_INFO_LBA			; Read Sys. Info. Sector into SIS-buffer
 		JSR 	DEV_RD_LBLK           		; Read SIS sector
 		PRSTR	TXT_FFREE_CLST			; print 'First Free Cluster:$'
 		PRHEX32	SIS_BUFF+$01EC
 		JSR	CROUT
-		MVAX	4 SIS_BUFF+$01E8 FREE_KB	
+FREE_KB_UPDATE	MVAX	4 SIS_BUFF+$01E8 FREE_KB	
 		JSR	CL2KB				; Convert #clusters to KB and store in FREE_KB
 		RTS
 		
 SYS_INFO_LBA	.dword	$00000000
 FREE_KB		.dword	$00000000
-;TXT_SYS_INFO	.by	'SYS_INFO_LBA:$' $00
 TXT_FFREE_CLST	.by	'First free cluster:$' $00
 TXT_KB		.by	' KB free' CR $00
 
-WRITE_SIS	JSR	INIT_SIS_BUF			; Init SIS Buffer for CMD_READ command
+; Write Info back to System Information Sector **************************************
+WRITE_SIS	ADB	SIS_BUFF+$01E8 SCNT		; add SCNT to #free clusters in SIS-buffer
+		SCC					; 'skip if C is clear' macro
+		INC	SIS_BUFF+$01E9
+		SCC	
+		INC	SIS_BUFF+$01EA
+		SCC	
+		INC	SIS_BUFF+$01EB
+		MVAX	4 FREE_CLUSTER SIS_BUFF+$01EC	; SIS First free cluster = FREE_CLUSTER
+		JSR	INIT_SIS_BUF			; Init SIS Buffer for CMD_WRITE command
 		LDXYI	SYS_INFO_LBA 			; Sys. Info. Sector LBA
-		JMP 	DEV_WR_LBLK           		; Write SIS to disk and return
+		JSR 	DEV_WR_LBLK           		; Write SIS to disk
+		JMP	FREE_KB_UPDATE			; Update FREE_KB and return
 
 ; **** Data Area ***************************************************************
 ; ******************************************************************************
