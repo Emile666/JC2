@@ -2,7 +2,7 @@
 ## This file is part of the libsigrokdecode project.
 ##
 ## Copyright (C) 2017 David Banks <dave@hoglet.com>
-## Update 2025 by Emile: most of David's code is rewritten. 
+## Update 2025 by Emile <emile@vandelogt.nl>: most of David's code rewritten. 
 ##
 ## This program is free software; you can redistribute it and/or modify
 ## it under the terms of the GNU General Public License as published by

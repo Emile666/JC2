@@ -1,4 +1,4 @@
-# Logic Analyzer for Junior Computer 2
+# Logic Analyzer for 6502 / Junior Computer 2
 First of all, I got inspired by some awesome people:
 - gusmanb (Agustín Gimenez Bernad), he created something very special: a Pico based Logic-Analyzer. Check it out at  https://github.com/gusmanb/logicanalyzer
 - A guy called Happy Little Diodes, who made a wireless Logic Analyzer for his ZX spectrum, check his video at https://www.youtube.com/watch?v=IHbIW8pi4Vo
@@ -27,6 +27,9 @@ TODO: describe Kicad PCB project here.
 Installing the protocol decoder is easy. Just copy the MOS6502 directory in this repository with its contents into the decoders subdirectory of the Logic-Analyzer program from Gusmanb and start the program. I am not going into details of the design here, but I wanted to show a few screen-shots of various 6502 instruction modes in order to prove that the decoder is working. The 6502 has 13 different instruction modes, which I hope to show you here.
 
 All screen-shots are taken from a working Logic-Analyzer with the 6502 protocol-decoder loaded. The system under test is a JC2 (Junior Computer 2) Single-Board-Computer running at 1 MHz.
+
+### Bugs
+There are still a couple of cases, where the protocol decoder is going wrong and displays a wrong opcode. It is not a systematic fault, because further down the bitstream the same instruction is displayed correctly. This is work-in-progress!
 
 ## 6502 details
 A few things are important in order to understand the screen-shots of the Logic-Analyzer:
@@ -70,10 +73,12 @@ The RTS opcode ($60) is at address $F381, after this fetch the processor does th
 *STA Absolute Instruction*
 
 ## X-indexed absolute mode
-TODO (11)
+![ASL_ABSX](png/11_asl_absx.png)<br>
+*ASL Absolute,X Instruction*
 
 ## Y-indexed absolute mode
-TODO (12)
+![STA_ABSY](png/12_sta_absy.png)<br>
+*STA Absolute,Y Instruction*
 
 ## Absolute Indirect mode
 ![JMP_IND](png/13_jmp_indirect.png)<br>
@@ -84,13 +89,16 @@ TODO (12)
 *STA Zero Page Instruction*
 
 ## X-Indexed Zero Page mode
-TODO (6)
+![INC_ZPX](png/06_inc_zpx.png)<br>
+*INC Zero Page,X Instruction*
 
 ## Y-Indexed Zero Page mode
-TODO (7)
+![STX_ZPY](png/07_stx_zpy.png)<br>
+*STX Zero Page,Y Instruction*
 
 ## X-Indexed Zero Page Indirect mode
-TODO (8)
+![STA_INDX](png/08_sta_indx.png)<br>
+*STA Indirect,X Instruction*
 
 ## Zero Page Indirect Y-indexed mode
 ![LDA_INDY](png/09_lda_zpindy.png)<br>

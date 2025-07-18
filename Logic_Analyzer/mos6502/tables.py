@@ -2,8 +2,9 @@
 ## This file is part of the libsigrokdecode project.
 ##
 ## Copyright (C) 2017 David Banks <dave@hoglet.com>
-## Update 2025 by Emile: added address- and data format-specifiers
-##                       and removed non-6502 addressing modes.
+## Update 2025 by Emile <emile@vandelogt.nl>: 
+##             - added address- and data format-specifiers
+##             - removed non-6502 addressing modes
 ##
 ## This program is free software; you can redistribute it and/or modify
 ## it under the terms of the GNU General Public License as published by
