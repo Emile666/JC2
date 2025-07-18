@@ -181,11 +181,6 @@ class Decoder(srd.Decoder):
             # ------------------------------------------------------------------------------------------------------------
             if pins[Pin.SYNC] == 1 and phi2r == 1:
                 cycle   = Cycle.FETCH
-                instr   = instr_table[bus_data]            # read instruction record
-                op      = instr[0]                         # instruction mnemonic text
-                mode    = instr[1]                         # instruction addressing mode
-                len     = addr_mode_len_map[mode]          # instruction number of bytes [1,2,3]
-                opcount = len - 1                          # counter for number of bytes read, is now 0, 1 or 2
                 op1     = 0                                # value of 1st databyte
                 op2     = 0                                # value of 2nd databyte (MSB)
                 self.samplenum_dasm_start = self.samplenum # start disassembly text from this samplenumber
@@ -194,9 +189,17 @@ class Decoder(srd.Decoder):
                 # ------------------------------------------------------------------------------------------------------------
                 # Read databyte op1 following the Fetch opcode byte, PHI2 falling edge is end of data-read
                 # ------------------------------------------------------------------------------------------------------------
-                if cycle == Cycle.FETCH and opcount > 0:
-                    cycle = Cycle.OP1
-                    opcount -= 1 # decrement #databytes to read, is now 0 or 1
+                if cycle == Cycle.FETCH:
+                    instr   = instr_table[bus_data]            # read instruction record
+                    op      = instr[0]                         # instruction mnemonic text
+                    mode    = instr[1]                         # instruction addressing mode
+                    len     = addr_mode_len_map[mode]          # instruction number of bytes [1,2,3]
+                    opcount = len - 1                          # counter for number of bytes read, is now 0, 1 or 2
+                    if opcount > 0:
+                        cycle = Cycle.OP1
+                        opcount -= 1 # decrement #databytes to read, is now 0 or 1
+                    else:
+                        cycle = Cycle.DATA # next cycle is a data-byte cycle
 
                 # ------------------------------------------------------------------------------------------------------------
                 # Three situations are possible:
