@@ -815,35 +815,9 @@ SETRTCADR	PHA			; save register address onto stack
 		PLA			; restore register address
 		JMP	I2C_SEND	; send register address
 
-; ******************************************************************************
-; START OF DATA INPUT/OUTPUT CODE
-; ******************************************************************************
-
-; ******************************************************************************
-; START OF VIA1 INPUT/OUTPUT CODE
-; ******************************************************************************
-
-; **** Write To VIA1 Register **************************************************
-
-; Input:  Y - Destination Register index (VIA_PORTA,VIA_DDRA...)
-;	  A - Data to be written into the Register
-
-; ******************************************************************************
-
-WRITE_VIA	STA	(IOBASE),Y
-		RTS
-
-; **** Read From VIA1 Register *************************************************
-
-; Input:  Y - Source Register index (VIA_PORTA,VIA_DDRA...)
-; Output: A - Read Data from the Register
-
-; ******************************************************************************
-
-READ_VIA	LDA	(IOBASE),Y
-		RTS
-
-
+		; 25-07-25 Emile: WRITE_VIA and READ_VIA removed
+		ORG	*+6		; Maintain compatibility with v1.1.4
+		
 ; ******************************************************************************
 ; START OF I2C CODE
 ; ******************************************************************************
@@ -1063,7 +1037,7 @@ SOUND_WNOISE	LDA	#$01
 ; **** Set Noise ***************************************************************
 
 ; Input: A - 0 = Periodic Noise  1 = White Noise
-;	 X - Noise Shift Rate
+;	 X - Noise Shift Rate [0..3]
 
 ; ******************************************************************************
 
@@ -1071,7 +1045,7 @@ SOUND_SETNOISE	ASL
 		ASL	
 SET_NOISE	STX	TEMP
 		ORA	TEMP
-		ORA	#$F0
+		ORA	#$E0		; Emile: 23-07-25, corrected, was $F0 (noise-att.), $E0 is noise-control register
 		JMP	SOUND_SENDBYTE	; send complete command byte to the sound chip
 
 ; **** Set Sound Frequency in HZ ***********************************************
@@ -1114,18 +1088,16 @@ INITVECT        LDX	#< NMI		; set NMI service routine
                 LDY	#> NMI
 		STX	NMIVECT
 		STY	NMIVECT+1
-		JSR     SETIRQVECT      ; set IRQ service routine
-		LDX	#<  IRQ
-		LDY	#> IRQ
-		JSR	SETIRQVECT
 		STX	IRQUSR
 		STY	IRQUSR+1
-		LDX	#<  BREAK	; set BRK service routine
-		LDY	#> BREAK
 		STX	BRKUSR
                 STY	BRKUSR+1
-                RTS
+		LDX	#< IRQ
+		LDY	#> IRQ
+		JMP	SETIRQVECT	; Set IRQ vector and return
 
+		ORG	*+8		; maintain compatibility with v1.1.4
+		
 MAINSTART       SEI			; disable Interrupts
                 LDX     #$FF
 		TXS			; initialize stack pointer
@@ -1343,26 +1315,16 @@ PARALLEL	DEX			; check read/write mode
 PARALLELL	JSR	PPORTLOAD	; call load pport ### not implemented yet
 		JMP	MONINP		; get next command line
 
-; tape load/save command *******************************************************
+; Removed 20-07-'25 (+34 bytes): tape load/save command **********************************
 
-TAPE		INY
-		DEX			; check read/write mode
-		BEQ	TAPEL		; read mode?
-		LDA	MODE		; no, test if valid address mode
-		BEQ	NOTVALID	; not valid, get next input
-		LDA	#CMD_SAVE	; set save to tape command
-		BNE	OPENTAPE
-TAPEL		LDA	#CMD_LOAD	; set load from tape command
-OPENTAPE	PHA			; save command to stack
-		LDA	#TAPE1_ID	; open tape1 device
-		STY	YSAV		; save y register
-		JSR	DEV_OPEN	; open tape device
-		LDY	YSAV		; restore y register
-		JSR	STRINPUT	; check for filename
-		PLA			; restore command
-		JSR	CMDDEV		; and send it to opened device
-		JMP	MONINP		; get next command line
+;----------------------------------------------------------------------------------		
+; This routine sets the return vector that is used by both Monitor and boot.sys.
+;----------------------------------------------------------------------------------		
+SET_RETURN_VECT	STX     RETURN_VECT     	; set entry point for monitor warm start
+                STY     RETURN_VECT+1
+		RTS
 
+		ORG	$E5E7		; maintain compatibility with previous BIOS versions
 ; load/save command ************************************************************
 
 LOADSAVE	LDA	MODE		; check address mode
@@ -1378,8 +1340,7 @@ CHKNEXTCMD	INY
 		BEQ  	XMODEM
 		CMP  	#'P'		; load/save via parallel port
 		BEQ  	PARALLEL
-		CMP  	#'T'		; load/save via tape
-		BEQ  	TAPE
+	:4	NOP			; REMOVED load/save via tape
 		CMP	#'0'
 		BCS	NOTVALID
 		DEX			; check load/save mode
@@ -1594,7 +1555,7 @@ JCRESET		LDA	#$06			; set PB5 = L (WRITE)
 		STA	PBD
 		SEI
 		JSR     INITVECT
-                JSR     TAPEIRQ_OFF
+                JSR     VIA2IRQ_OFF
 		CLI
 		JMP	MONITOR_BLOCK.RESET	; jump to Junior Computer reset routine
 
@@ -1616,11 +1577,11 @@ ESCNORM		.byte   $6D,$00	        		; VT100 set normal text mode
 ESCINV		.byte   $37,$6D,$00	        	; VT100 set inverse text mode
 ESCBLNK		.byte   $35,$6D,$00	        	; VT100 set blinking text mode
 
-TITLE		.by   	'Junior Computer ][' CR,CR,CR
-		.by   	' BIOS Version '
+TITLE		.by   	'Junior Computer ][ ' CR,CR,CR
+		.by   	' BIOS V'
         	.byte   VERMAIN,$2E,VERPSUB,$2E,VERSSUB,CR
-        	.by   	' 2020/25 by Joerg Walke' CR CR $00
-IOCARD		.by	' IO/Language-Card at $' $00
+        	.by   	' 2020/24 by Joerg Walke, 2025 by Emile' CR CR $00
+IOCARD		.by	' IO-Card at $' $00
 KBDSTR		.by	CR ' ASCII Keyboard connected' $00
 SPACE    	.byte  	CR, CR, CR, CR, $00
 MENU		.by   	'(M)onitor  ' $00
@@ -2163,12 +2124,17 @@ DETECT_IOL_CARD	LDA	#$00
 		LDA	#$08		; try 1st IO-card at $0800
 		STA	IOBASEH		; set high byte of IO base pointer to $00
 		
-DETECT_LP	LDY	#DDRB		; input & output regs are the same
-		STA	(IOBASE),Y
-		STY	ADRL		; reset databus
-		CMP	(IOBASE),Y	; Match only if 6522 VIA is present
-		BEQ	STOREBASE	; branch if a card is found
+DETECT_LP	LDY	#VIA_DDRA	; input & output regs are the same
+		LDA	#$55		; DDRA = $55
+		STA	(IOBASE),Y	; DDRA = 0101 0101 (0=input, 1=output)
+		LDY	#VIA_PORTA	; 
+		LDA	#0
+		STA	(IOBASE),Y	; Write all zeros to PORTA	
+		LDA	(IOBASE),Y	; Get PORTA value
+		CMP	#$AA		; input bits should be 1, output bits should be 0
+		BEQ	INIT_IOCARD	; branch if a card is found
 		
+		LDA	IOBASEH		; MSB of IO base pointer
 		CLC
 		ADC	#4		; next IO base-address
 		STA	IOBASEH		; next card-address
@@ -2179,21 +2145,9 @@ DETECT_LP	LDY	#DDRB		; input & output regs are the same
 		STA	IOBASEH		; 0 = no card found
 NOCARD          RTS                     ; no card found
 
-;----------------------------------------------------------------------------------		
-; This routine sets the return vector that is used by both Monitor and boot.sys.
-;----------------------------------------------------------------------------------		
-SET_RETURN_VECT	STX     RETURN_VECT     	; set entry point for monitor warm start
-                STY     RETURN_VECT+1
-		RTS
-
-		ORG	$ECFF		; maintain compatibility with v1.1.4
+		ORG	$ED01		; maintain compatibility with v1.1.4
 		
-STOREBASE	STA	IOBASEH		; card found, set high byte of base pointer.
-
 ; **** Initialize The IO/Language Card *****************************************
-
-; ******************************************************************************
-
 INIT_IOCARD     LDA     STDINDEV
                 CMP     #TTY1_ID
                 BNE     INIT_VIA        ; is standard input device still TTY?
@@ -2210,468 +2164,142 @@ INIT_VIA	LDY	#PORTB
 		STA	(IOBASE),Y
 		JSR	SOUND_MUTEALL	; mute sound output
 INIT_SDCARD     JSR     SPI_INIT        ; initialize SPI
-                LDX     #<  SDC_DEV
+                LDX     #< SDC_DEV
                 LDY     #> SDC_DEV
                 JSR     DEV_ADD         ; add sd-card driver
 INIT_TAPE       LDA	#$00
                 LDY	#ACR		; select auxilary control register
 		STA	(IOBASE),Y	; set one shot timer mode
-                STA	KEY_SENSE	; reset tape sense line status
 		LDY	#PCR		; select peripheral control register
 		STA	(IOBASE),Y	; set interrupt on falling edge of CA1
-		;LDY	#IER		; select interrupt enable register
-		JSR	TAPERW_OFF	; turn tape read/write mode off
+		JSR	VIA2IRQ_ON	; Enable VIA2 Timer interrupt
 		JSR	RESET_TIMER2	; set Timer2 to 1/60 second
-                LDX     #<  TAPE_DEV
-                LDY     #> TAPE_DEV
-                JSR     DEV_ADD         ; add tape driver
-		LDX	#<  TAPEIRQ 	; set low address of clock interrupt routine
-		LDY	#> TAPEIRQ   ; set low address of clock interrupt routine
+		LDX	#< VIA2IRQ 	; set low address of clock interrupt routine
+		LDY	#> VIA2IRQ   	; set high address of clock interrupt routine
 SETIRQVECT	STX	IRQVECT
 		STY	IRQVECT+1
 		RTS
 
 ; ******************************************************************************
-; START OF TAPE READ/WRITE ROUTINES
+; TAPE READ/WRITE ROUTINES removed 24-07-'25 Emile
 ; ******************************************************************************
-
-TAPEESC		JMP	BREAKSYNC
-
-; *** Tape Load Routine ********************************************************
-
-; ******************************************************************************
-
-TAPELOAD	JSR	PREPFILENAME
-		JSR	TAPE_PLAY_MSG	; print PLAY message
-		JSR	TAPE_ESC_MSG
-WAITPLAY	JSR	CHKESC		; <ESC> key pressed?
-		BCS	TAPEESC		; yes -> exit
-		LDA	KEY_SENSE	; check sense line status
-		BNE	WAITPLAY	; if <> 0, wait until datasette key pressed down
-		JSR	TAPERW_ON	; turn off key clock interrupt and turn on bit read interrupt
-STARTLOAD	JSR	TAPE_LOAD_MSG	; print LOAD message
-		JSR	MOTOR_ON	; and turn motor on
-STARTSYNC	LDA	#$01		; we are in sync mode
-		STA	BITCNT		; so initialize bit counter to just one bit
-WAITBIT		LDY	#PORTB		; set index to Port B
-		LDA	(IOBASE),Y	; load port B
-		AND	#$20		; test tape sense line at PB5
-		BNE	BREAKSYNC	; if sense line is high, PLAY key is no longer down -> exit.
-READSYNC	LDA	BITCNT		; bit counter reached 0 ?
-		BNE	WAITBIT		; no, wait for more bits
-		LDA	OUTBYTE		; yes, load current byte into A
-		CMP	#SYNCMARK	; is it a valid sync mark?
-		BNE	STARTSYNC	; no, resync
-		LDX	#$00
-		STX	IBYTES		; yes, reset sync block counter
-GETBYTE?	JSR	BYTE_IN		; read next full byte
-		LDA	OUTBYTE		; and load it into A
-		CMP	#SYNCMARK	; still a sync mark?
-		BNE	SYNCEND?	; no, check if end of sync
-		INX			; yes, increment sync mark counter
-		BNE	GETBYTE?	; 256 sync marks read? no read more
-		JSR	COUT		; yes, print '.'
-		INC	IBYTES		; increment sync block counter
-		JMP	GETBYTE?	; and read next byte
-SYNCEND?	LDA	IBYTES
-		BEQ	STARTSYNC	; at least one sync block read? no resync
-		JSR	READHEADER	; yes, read header. C = 0 if no header mark is found. X returns 0
-		BCC	STARTSYNC	; no header mark found or names not equal. resync
-		STX	BLKNO		; BLKNO = 0
-		STX	CHECKSUM	; CHECKSUM = 0
-NEXTBLK		LDA	OUTBYTE		; load current block number into A
-		CMP	BLKNO		; is it the expected number?
-		BNE	ERRLOAD		; no, error.
-NEXTDATA	JSR	BYTE_IN		; yes, read next data byte
-		LDA	OUTBYTE		; and load it into A
-		LDY	#$00
-		STA	(ADRL),Y	; store read data byte to destination address
-		EOR	CHECKSUM	; XOR it with checksum
-		STA	CHECKSUM	; and write result back to checksum
-		JSR	CMPADDR		; see if there's more to load
-                BCS  	ENDLDDATA  	; no, finish loading
-		JSR	INCADR		; yes, increment current destination address
-		INX
-		BNE	NEXTDATA	; and read next byte
-		JSR	BYTE_IN		; read checksum
-		LDA	OUTBYTE		; and load it int A
-		CMP	CHECKSUM	; compare expected check sum with calculated checksum
-		BNE	ERRLOAD		; if checksum incorrect, exit with error
-		JSR	BYTE_IN		; read next block number
-		INC	BLKNO		; increment internal block counter
-		JMP	NEXTBLK		; read next block
-ENDLDDATA	JSR	BYTE_IN		; read last checksum
-		LDA	OUTBYTE		; and load it int A
-		CMP	CHECKSUM	; compare expected check sum with calculated checksum
-		BNE	ERRLOAD		; if checksum incorrect, exit with error
-		JSR	TAPE_OK_MSG	; print OK message
-ENDLOAD		JSR	TAPERW_OFF	; return to clock interrupt
-		JMP	MOTOR_OFF	; and turn motor off
-
-BREAKREAD	PLA			; clean up stack
-		PLA
-		PLA
-BREAKSYNC	JSR	TAPE_BREAK_MSG	; print BREAK message
-		JMP	ENDLOAD		; and exit
-
-ERRLOAD		JSR	TAPE_ERR_MSG	; print error message
-		JMP	ENDLOAD		; end exit
-
-; *** Read Tape Header Routine *************************************************
-
-; ******************************************************************************
-
-READHEADER	LDA	OUTBYTE		; load current byte
-		CMP	#ADDRMARK	; is it a address mark?
-		BNE	NOHDRMARK	; no, exit
-		LDY	#$00		; set string counter to 0
-		STY	EQUFLAG		; clear character compare flag
-		LDX	#$06		; 6 bytes (start address, end address, reserved) to read
-READADDR	JSR	BYTE_IN		; read new address byte
-		LDA	OUTBYTE		; and load it into A
-		STA	NUML-3,X	; store it to pinter location
-		LDA	TAPEFND,Y	; load one char of "found" message
-		JSR	COUT		; and print it
-		INY			; increment message pointer
-		DEX			; decrement byte read counter
-		BNE	READADDR	; more address bytes to read?
-		JSR	BYTE_IN		; read next byte
-		LDA	OUTBYTE		; and load it into A
-		CMP	#NAMEMARK	; is it a name mark?
-		BNE	READFIRSTBYTE	; no, read first data byte
-		LDY	#$00		; reset name string pointer
-READNAME	JSR	BYTE_IN		; read name char
-		LDA	OUTBYTE		; load it into A
-		STA	IBYTES 		; and save value
-		CMP	#FILEMARK	; is it the file mark?
-		BEQ	READFIRSTBYTE	; yes, read first data byte
-		BCC	MARKERROR 	; is character < spac char? yes show error
-		JSR	COUT		; no, print current name char
-		LDA	RBUFF,Y		; load compare char
-		CMP	#'*'		; is it a '*'?
-		BEQ	READNAME	; yes, skip compare
-		INY
-		EOR	IBYTES		; is char of search name equal current name?
-		BEQ	READNAME	; yes, read next char
-		STA	EQUFLAG		; no, mark name as not equal
-		BNE	READNAME	; and read next char
-
-READFIRSTBYTE	LDA	EQUFLAG		; is search name equal current name?
-		BNE	NAMENEQ		; no, we need to skip the file
-		LDA	RBUFF,Y
-		CMP	#'*'		; was last char in search name a '*'?
-		BEQ	NAMEEQU		; yes, name is equal
-		LDA	RBUFF,Y		; no, is search name length equal current name length?
-		BNE	NAMENEQ		; no, we need to skip the file
-NAMEEQU		JSR	BYTE_IN		; yes, read first data Byte
-		SEC			; header OK, so set carry flag
-		RTS
-
-NAMENEQ		JSR	TAPE_SKIP_MSG	; print skip message
-NOHDRMARK	CLC			; header not OK, so clear carry flag
-		RTS
-
-MARKERROR	PLA			; clear return address
-		PLA
-		JMP	ERRLOAD		; and jump to error routine
-
-; *** Tape Byte Read Routine ***************************************************
-
-; ******************************************************************************
-
-BYTE_IN		TYA			; save Y register
-		PHA
-		LDY	#PORTB		; select port B register
-READBIT		LDA	(IOBASE),Y	; read port B Bits
-		AND	#$20		; test tape sense line at PB5
-		BNE	BREAKREAD	; play key is no longer down, stop reading
-		LDA	BITCNT		; load bit counter
-		BNE	READBIT		; check again until bit counter = 0
-		LDA	#$08
-		STA	BITCNT		; reset bit counter
-ENDBYTE_IN	PLA			; yes, restore Y register
-		TAY
-		RTS
-
-; *** Tape Save Routine ********************************************************
-
-; ******************************************************************************
-
-TAPESAVE	JSR	PREPFILENAME
-		JSR	TAPE_REC_MSG	; Print press record message
-		JSR	TAPE_ESC_MSG
-WAITRECORD	JSR	CHKESC		; <ESC> key pressed?
-		BCS	BREAKSAVE	; yes -> exit
-		LDA	KEY_SENSE	; Check if any Datasette key is pressed
-		BNE	WAITRECORD	; No, repeat check
-		JSR	TAPE_SAVE_MSG	; Print save message
-		SEI			; Yes, disable interrupts
-		JSR	STROUT		; Print file name
-		LDA	#$FF
-		STA  	CNTA		; Initialize timer value
-		LDA	#$06		; Write 6x256 Byte blocks of sync marks
-		JSR	WRITESYNC	; Write sync marks
-		JSR	WRITEHEADER	; Write tape header
-		LDA	#FILEMARK
-		JSR	BYTE_OUT	; Write file mark
-		LDA	#$00
-		STA	CHECKSUM	; Initialize XOR data checksum
-		STA	BLKNO		; Initialize block numbers
-		TAX			; Initialize Byte counter
-NEXTBLOCK	JSR	BYTE_OUT	; Write block number to tape
-WRNXTBYTE	LDY	#PORTB
-		LDA	(IOBASE),Y	; Read Port B
-		AND	#$20		; Test tape sense line at PB5
-		BNE	BREAKSAVE	; No Datasette key pressed. Stop saving
-		LDY	#$00
-		LDA	(ADRL),Y	; Load current data Byte
-		TAY			; Save data to Y register
-		EOR	CHECKSUM	; XOR data with checksum
-		STA	CHECKSUM
-		TYA			; Reload data into Accumulator
-		JSR	BYTE_OUT	; Write data Byte to tape
-		JSR	CMPADDR		; See if there's more to copy
-                BCS  	ENDDATA  	; No more data to copy
-		JSR	INCADR		; Increment current save address
-		INX			; Increment Byte counter
-		BNE	WRNXTBYTE	; If less than 256 Bytes written, then write next data Byte
-ENDBLOCK	LDA	CHECKSUM	; Else...
-		JSR	BYTE_OUT	; Write checksum at the end of block
-		INC	BLKNO		; Increment block number
-		LDA	BLKNO
-		JMP	NEXTBLOCK	; Write next block
-ENDDATA		LDA	CHECKSUM
-		JSR	BYTE_OUT	; Write checksum at end of block
-		LDA	#$03
-		JSR	BYTE_OUT	; Write End-Of-Text mark
-		JSR	TAPE_OK_MSG	; Print OK message
-ENDSAVE		CLI			; Reenable interrupts
-		JMP	MOTOR_OFF	; Stop motor
-
-; ******************************************************************************
-
-BREAKSAVE	JSR	TAPE_BREAK_MSG	; Print Break message
-		JMP	ENDSAVE
-
-; **** Write Synchronization Bytes To Tape *************************************
-
-; ******************************************************************************
-
-WRITESYNC	STA	STOH
-		LDA	#$00
-		STA	STOL
-		LDA	#SYNCMARK	; Load sync mark
-		STA	OUTBYTE		; and store it to output variable
-PLOOP		JSR	WRITEBYTE	; Write sync mark
-		DEC	STOL		; Decrement loop counter
-		BNE	PLOOP		; Repeat loop if counter low byte > 0
-		DEC	STOH		; Overflow, decrement counter high byte
-		BNE	PLOOP		; Repeat loop if counter high byte > 0
-ENDPREAMBLE	RTS
-
-; **** Write File Header To Tape ***********************************************
-
-; ******************************************************************************
-
-WRITEHEADER	LDX	#$06
-		LDA	#ADDRMARK	; load address mark
-WRITEADDR	JSR	BYTE_OUT	; write to tape
-		LDA	NUML-3,X	; load address byte
-		DEX
-		BPL	WRITEADDR	; all address fields written? no repeat
-		LDA	#NAMEMARK	; yes, load name mark
-		JSR	BYTE_OUT	; and write it to tape
-		LDY	#$00		; index to first filename char
-WRNXTCHAR	LDA	RBUFF,Y		; load filename char
-		BEQ	ENDHEADER	; is it a NULL? yes -> exit
-		JSR	BYTE_OUT	; no write filename char to tape
-		INY			; increment index to next filename char
-		BNE	WRNXTCHAR	; and write it
-ENDHEADER	RTS
-
-; **** Write Tape Byte Routine *************************************************
-
-; ******************************************************************************
-
-BYTE_OUT	STA	OUTBYTE		; save output byte
-WRITEBYTE	TXA			; save X register
-		PHA
-		TYA			; save Y register
-		PHA
-WAIT_BIT1	BIT  	CNTIRQ		; timer counted to zero
-		BPL  	WAIT_BIT1	; no, repeat test
-		LDX	#8		; initialize bit counter
-NEXT_BIT	LDY	#PORTB
-		LDA	#%00010000	; set CAS_WR output HIGH
-		ORA	VIA_STATUS	; get old output status and set CAS_WR Pin
-		STA	(IOBASE),Y
-		ROL	OUTBYTE		; rotate next output bit to carry flag
-		BCC	SET_SHORT	; if carry = 0 then write short pulse
-SET_LONG	LDY	#LPTIME		; else write long pulse
-		BNE	WRITE_BIT
-SET_SHORT	LDY	#SPTIME		; set short pulse value
-WRITE_BIT	STY	YSAV		; save pulse width value for low phase
-		JSR	SHORTDELAY1	; high phase delay
-		LDY	#PORTB		; index to port B
-		LDA	#%11101111	; set CAS_WR output LOW
-		AND	VIA_STATUS	; get old output status and clear CAS_WR pin
-		STA	(IOBASE),Y
-		LDY	YSAV		; restore delay value for low phase of pulse
-		DEX
-		BEQ	ENDWRITE	; all bits done? yes, exit routine
-		JSR	SHORTDELAY1	; low phase delay
-		JMP	NEXT_BIT	; continue bit send loop
-ENDWRITE	STY  	CNTA		; set timer for final low phase
-		ROL	OUTBYTE		; rotate one bit to restore old Byte value
-		PLA
-		TAY			; restore Y register
-		PLA
-		TAX			; restore X register
-		RTS
 
 ; **** VIA2 IRQ Routine ********************************************************
-
-; ******************************************************************************
-
-TAPEIRQ		PHA			; save accumulator
+VIA2IRQ		PHA			; save accumulator
 		TYA
 		PHA			; save Y register
 		LDY	#IFR		; select interrupt flag register
 		LDA	(IOBASE),Y
-		BPL	NOTAPEIRQ	; check if it was a VIA2 interrupt
+		BPL	NOVIA2IRQ	; check if it was a VIA2 interrupt
+		
 		AND	#$02		; yes, CA1 interrupt occured?
 		BEQ	CHECKKEY	; no, check key status
-CHECKBIT	DEC	BITCNT		; decrement bit counter
-		LDY	#PORTA
+		
+CHECKBIT	LDY	#PORTA		; VIA2 PORTA
 		LDA	(IOBASE),Y	; clear CA1 interrupt flag
 		LDA	CNTIRQ		; load timer IRQ status
-		ASL			; and shift it into the carry flag
-		ROL	OUTBYTE		; save carry as current bit value
 		LDA	#RPTIME
-		STA	CNTB		; set timer to Read-Point-Time
-		BNE	ENDTAPEIRQ	; and exit IRQ routine
-CHECKKEY	JSR	CHECK_KEYSIG	; check tape sense line
-		JSR	RESET_TIMER2	; reset Timer2 and interrupt flags
+		STA	CNTB		; set RIOT timer B to Read-Point-Time
+		BNE	ENDVIA2IRQ	; and exit IRQ routine
+		
+CHECKKEY	JSR	RESET_TIMER2	; reset Timer2 and interrupt flags
 		LDA     TICKCNT         ; load the tick counter
-		BEQ     ENDTAPEIRQ      ; is it 0?
+		BEQ     ENDVIA2IRQ      ; is it 0?
+		
 		DEC     TICKCNT         ; no, decrement tick counter
-ENDTAPEIRQ	PLA
+ENDVIA2IRQ	PLA
 		TAY			; restore Y register
 		PLA			; restore accumulator
 		RTI
 
-NOTAPEIRQ	PLA
+NOVIA2IRQ	PLA
 		TAY			; restore Y register
 	        PLA			; restore accumulator
 USRIRQ		JMP	IRQ		; call user interrupt routine
 
 ; **** Reset Timer2 Routine ****************************************************
-
-; ******************************************************************************
-
 RESET_TIMER2	LDY	#T2CL		; select Timer2 lower byte register
 		LDA	#$4B		; reset Timer2
 		STA	(IOBASE),Y	; store timer low value
-		LDA	#$41
+		LDA	#$41		; $411A = 16666 => 1/60 second
 		INY			; select Timer2 higher byte register
-		STA	(IOBASE),Y	; store timer high value
-		RTS
+VIA2IRQ_W	STA	(IOBASE),Y	; store timer high value
+VIA2IRQ_X	RTS			; return
 
-; **** Check Tape Sense Line Routine *******************************************
-
-; ******************************************************************************
-
-CHECK_KEYSIG	LDY	#PORTB
-		LDA	(IOBASE),Y
-		AND	#$20		; test tape sense line at PB5
-		CMP	KEY_SENSE	; is it different to old tape sense line status?
-		BEQ	ENDCHECK	; no, just return
- 		STA	KEY_SENSE	; yes, save new state value
-		BCS	MOTOR_OFF
-		BCC	MOTOR_ON
-ENDCHECK	RTS
-
-; **** Turn Tape Drive Motor On ************************************************
-
-; ******************************************************************************
-
-MOTOR_ON	LDY	#PORTB
-		LDA	#%10111111	; set CAS_MOT line low
-		AND	VIA_STATUS
-		STA	VIA_STATUS
-		STA	(IOBASE),Y
-		RTS
-
-; **** Turn Tape Drive Motor Off ***********************************************
-
-; ******************************************************************************
-
-MOTOR_OFF	LDY	#PORTB
-		LDA	#%01000000	; set CAS_MOT line high
-		ORA	VIA_STATUS
-		STA	VIA_STATUS
-		STA	(IOBASE),Y
-		RTS
-
-; **** Tape IRQ Off ************************************************************
-
-; ******************************************************************************
-
-TAPEIRQ_OFF     LDY	#IER		; select interrupt enable register
+; **** VIA2 IRQ Off ************************************************************
+VIA2IRQ_OFF     LDY	#IER		; select interrupt enable register
                 LDA     IOBASEH
-                BEQ     TAPEIRQ_OFF1    ; IO card available? No, just exit
-		LDA	#$7F
-		STA	(IOBASE),Y	; disable all VIA2 interrupts
-TAPEIRQ_OFF1	RTS
+                BEQ     VIA2IRQ_X    	; IO card available? No, just exit
+		LDA	#$7F		; Disable all VIA2 interrupts
+		BNE	VIA2IRQ_W	; branch always
 
-; **** Turn Tape Read/Write Mode On ********************************************
+; **** VIA2 IRQ On *************************************************************
+VIA2IRQ_ON	JSR	VIA2IRQ_OFF	; disable all VIA2 interrupts
+                LDA     IOBASEH
+                BEQ     VIA2IRQ_X    	; IO card available? No, just exit
+		LDA	#$A0		; Enable interrupt for Timer2
+		BNE	VIA2IRQ_W	; branch always
+		
+; ------------------------------------------------------------------------------
+; Writes one data byte to a specific register of the MCP23017.
+; Inputs: A: I2C-address of MCP23017 ($40, $42 or $44).
+;         X: the register to write to
+;         Y: the databyte to write into the register
+; Output: C=0: Error writing byte
+;         C=1: OK
+; ------------------------------------------------------------------------------
+MCP23017_WRITE	STX	SAVEX		; Save register address
+		STY	SAVEY		; Save register data
+		TAX			; X = I2C-address
+		JSR	I2C_START	; Send I2C start condition (affects A and Y)
+		TXA			; A now contains the address of the MCP23017 to write to
+		AND	#$FE		; Make sure it is an I2C write address
+		JSR	I2C_SEND	; I2C-write MCP23017 address
+		BCC	MCP_WRX		; branch if C=0 (NACK)
+		
+		LDA	SAVEX		; Get register address
+		JSR	I2C_SEND	; I2C-write register address
+		BCC	MCP_WRX		; branch if C=0 (NACK)
 
-; ******************************************************************************
+		LDA	SAVEY		; Get databyte to write
+		JSR	I2C_SEND	; I2C-write register address
+MCP_WRX		JMP	I2C_STOP	; send I2C-stop and return
 
-TAPERW_ON	JSR	TAPEIRQ_OFF
-		LDA	#$82
-		STA	(IOBASE),Y	; set interrupt for CA1
-		RTS
+; ------------------------------------------------------------------------------
+; Reads one data byte from a specific register of the MCP23017.
+; Inputs: A: I2C-address of MCP23017 ($40, $42 or $44).
+;         X: the register to read from
+; Output: C=0: Error reading byte
+;         C=1: A = byte read
+; ------------------------------------------------------------------------------
+MCP23017_READ	AND	#$FE		; Make sure it is an I2C write address
+		STA	SAVEY		; Save I2C write address in SAVEY
+		STX	SAVEX		; SAVEX = register address
+		TAX			; X = I2C write-address
+		JSR	I2C_START	; Send I2C start condition (affects A and Y)
+		TXA			; A now contains the address of the MCP23017 to write to
+		JSR	I2C_SEND	; I2C-write MCP23017 address
+		BCC	MCP_WRX		; branch if C=0 (NACK)
+		
+		LDA	SAVEX		; Get register address
+		JSR	I2C_SEND	; I2C-write register address
+		BCC	MCP_WRX		; branch if C=0 (NACK)
+		
+		JSR	I2C_START	; Send I2C repeated start condition
+		LDA	SAVEY		; Get I2C write address back
+		ORA	#$01		; Make it an I2C read-address
+		JSR	I2C_SEND	; I2C-write MCP23017 read-address
+		BCC	MCP_WRX		; branch if C=0 (NACK)
 
-; **** Turn Tape Read/Write Mode Off *******************************************
+		JSR	I2C_RCV		; I2C-read: receive byte 
+		PHA			; Save for now
+		JSR	I2C_NACK	; Send NACK (done reading)
+		JSR	I2C_STOP	; send I2C-stop and return
+		PLA			; Get byte read back
+		SEC			; C=1: ok
+		RTS			; and return
 
-; ******************************************************************************
-
-TAPERW_OFF	JSR	TAPEIRQ_OFF
-		LDA	#$A0
-		STA	(IOBASE),Y	; set interrupt for Timer2
-		RTS
-
-; **** Prepare Filename ********************************************************
-
-; Input: X - low byte of string pointer
-;	 Y - high byte of string pointer
-
-; ******************************************************************************
-
-PREPFILENAME	JSR	SETSTRBUFF0
-		LDY	#$00
-		LDX	#$00
-NEXTFNCHAR	LDA  	(PSTR),Y   	; get next input char
-		BEQ	ENDFILENAME
-		CMP	#'a'		; char < 'a'?
-		BCC	COPYNAME	; no, just copy char to buffer
-		CMP	#'{'		; char > 'z'?
-		BCS	COPYNAME	; no, just copy char to buffer
-		AND	#$DF		; convert to upper case char
-COPYNAME	STA	RBUFF,X		; char to buffer
-		INY
-		INX
-		BNE	NEXTFNCHAR	; read next char of filename
-ENDFILENAME	CPX	#$00
-		BNE	ENDPREP		; is X = 0? no -> exit
-		LDA	#'*'		; yes, empty string.
-		STA	RBUFF,X		; make it "*"
-		INX
-		TYA
-ENDPREP		STA	RBUFF,X		; terminate string with NULL
-		JSR	SETSTRBUFF	;
-		RTS
+		ORG 	$F015		; maintain compatibility with previous BIOS versions
 
 ; ******************************************************************************
 ; START OF XMODEM CODE
@@ -3034,77 +2662,16 @@ EndXMsg		PLA
 		LSR			; restore carry and leave A = 0
 		RTS
 
-; Tape Messages ****************************************************************
-
-TAPE_OK_MSG	SEC
-		LDY	#(TAPEOK-MSGX)
-		BNE	PrintXMsg
-
-TAPE_ERR_MSG	CLC
-		LDY	#(TAPELDERR-MSGX)
-		BNE	PrintXMsg
-
-TAPE_BREAK_MSG	CLC
-		LDY	#(TAPEBRK-MSGX)
-		BNE	PrintXMsg
-
-TAPE_SAVE_MSG	LDY	#(TAPESAV-MSGX)
-		BNE	PrintXMsg
-
-TAPE_LOAD_MSG	LDY	#(TAPELOD-MSGX)
-		BNE	PrintXMsg
-
-TAPE_SKIP_MSG	LDY	#(TAPESKIP-MSGX)
-		BNE	PrintXMsg
-
-TAPE_REC_MSG	JSR	TAPE_PLAY_MSG
-		LDY	#(TAPEREC-MSGX)
-		BNE	PrintXMsg
-
-TAPE_PLAY_MSG	LDY	#(TAPEPLAY-MSGX)
-		BNE	PrintXMsg
-
-TAPE_ESC_MSG	LDY	#(ESCX-MSGX)
-		BNE	PrintXMsg
-
 ; ******************************************************************************
 ; String Data Section
 ; ******************************************************************************
-
-MSGX            .byte      CR
-		.by	'Begin data transfer'
-ESCX		.by	', <ESC> to cancel. '
-		.byte     	$00
-ERRX		.byte	CR
-		.by	'Transfer Error'
-		.byte      CR,$00
+MSGX            .by     CR 'Begin data transfer, <ESC> to cancel. ' $00
+ERRX		.by	CR 'Transfer Error' CR $00
 SUCCX           .byte	EOT,EOT,EOT
-
-TAPEOK		.byte	CR
-		.by 	'OK'
-		.byte  	CR,$00
-TAPEPLAY	.byte	CR
-		.by	'Press PLAY'
-		.byte	$00
-TAPEREC		.by	' & RECORD'
-		.byte	$00
-TAPESAV		.byte	CR
-		.by	'saving '
-		.byte	$00
-TAPESKIP	.by	', skipped'
-TAPELOD		.byte	CR
-		.by	'loading'
-		.byte	$00
-TAPEFND		.by	'found '
-TAPEBRK		.byte	CR
-		.by	'Break'
-		.byte	CR,$00
-TAPELDERR	.byte	CR
-		.by	'Load Error'
-		.byte	CR,$00
-TAPEANYNAME	.by	"*"
-		.byte	$00
-
+MSG_OK		.by	CR 'OK' CR $00
+					; Tape Messages removed 25-07-'25 Emile
+		ORG	*+120		; maintain compatibility with v1.1.4
+		
 ; **** IRQ, NMI and BREAK Service Routines *************************************
 
 ; ******************************************************************************
@@ -3146,18 +2713,8 @@ BREAK					; default IRQUSR & BRKUSR entry
 		CLI			; enable interrupts
 		JMP	MONRESET	; and return to monitor
 
-; **** Try To Read Magic Number ************************************************
-
-; ******************************************************************************
-
-GETMAGIC	LDX	#$04
-MAGICLOOP	LDA	MAGIC0-1,X
-		CMP	$DFFB,X
-		BNE	NOMAGIC
-		DEX
-		BNE	MAGICLOOP
-NOMAGIC		TXA
-NOSTDPROC	RTS
+					; GETMAGIC removed 25-07-'25 Emile
+		ORG	*+15		; maintain compatibility with v1.1.4
 
 ; **** Write To Serial Routine *************************************************
 
@@ -4147,16 +3704,10 @@ XM_SAVE  	CMP	#CMD_SAVE
 		JMP	XModemSnd
 
 ; ******************************************************************************
-; Tape Device Command Interpreter
+; Tape Device Command Interpreter (14 bytes, removed 24-07-25 Emile)
 ; ******************************************************************************
 
-TAPE_CMD	CMP	#CMD_LOAD
-		BNE	TP_SAVE
-		JMP	TAPELOAD
-TP_SAVE 	CMP	#CMD_SAVE
-		BNE     COM_CMD
-		JMP	TAPESAVE
-
+		ORG	$F806		; maintain compatibilitywith v1.1.4
 ; ******************************************************************************
 ; XSD_Card Command Interpreter
 ; ******************************************************************************
@@ -4412,7 +3963,7 @@ XMODEM_DEV	.byte	XMODEM1_ID, $00  ; XModem Device Driver Descriptor
 TAPE_DEV	.byte	TAPE1_ID, $00    ; Tape Device Driver Descriptor
 		.word	_EMPTY_
 		.word	_EMPTY_
-		.word	TAPE_CMD
+		.word	_EMPTY_
 
 SDC_DEV	        .byte	SDC1_ID, $00     ; SD-Card Driver Descriptor
 		.word	_EMPTY_

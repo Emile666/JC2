@@ -1,5 +1,5 @@
 ; ------------------------------------------------------------------------------
-; Junior Computer ][ BIOS Version 1.2.3 by Joerg Walke
+; Junior Computer ][ BIOS Version 1.2.4 by Emile, v1.1.4 and earlier versions by Joerg Walke
 ;
 ; 21-04-25: v1.2.0 Emile, Integration into 1 eprom
 ; 08-05-25: v1.2.1 -Basic update (v2.22 patches + I2COUT, I2CIN and DOS commands)
@@ -7,11 +7,14 @@
 ;                  -Address corrections to maintain V1.1.4 compatibility (broken in V1.2.0)
 ; 19-05-25: v1.2.2 -ZP addresses reorganised to avoid conflicts between Basic, BIOS & boot.sys.
 ;		   -NMI & IRQ JMP vectors moved from Monitor to here to prepare for Monitor ROM switching
-; 24-05-25: v1.2.3 Bug-fix Basic LOAD command. 
+; 24-05-25: v1.2.3 Bug-fix Basic LOAD command.
+; 20-07-25: v1.2.4 - TAPE routines removed and DETECT_IOL updated
+;                  - Basic: SOUND added and PORTIO/PORTOUT/PORTIN updated with new IO2 and main-board
+;                  - MCP23017 routines added
 ; ------------------------------------------------------------------------------
 VERMAIN   	EQU     '1'    			; BIOS main version
 VERPSUB    	EQU     '2'    			; BIOS primary sub version
-VERSSUB		EQU	'3'			; BIOS secondary sub version
+VERSSUB		EQU	'4'			; BIOS secondary sub version
 
         	OPT h-                          ; no DOS file-header
         	OPT f+                          ; save as single block

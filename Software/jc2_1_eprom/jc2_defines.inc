@@ -13,7 +13,16 @@ BIOS_EN		EQU	$01		; PORTB bit 0: 1 = enable BIOS at $E000
 MON_EN		EQU	$02		; PORTB bit 1: 1 = enable Monitor at $1C00
 BAS_EN		EQU	$80		; PORTB bit 7: 1 = enable BASIC at $B000
 
-; VIA 1 Register Indices *******************************************************
+; MCP23017 I2C GPIO constants
+MCP23017_I2C_0	EQU	$40		; I2C address of 1st MCP23017 on IO2 board
+MCP23017_I2C_1	EQU	$42		; I2C address of 2nd MCP23017 on IO2 board
+MCP23017_I2C_2	EQU	$44		; I2C address of 3rd MCP23017 on IO2 board
+IODIRA		EQU	$00		; IO Direction register Port A (1=input, 0=output)
+IODIRB		EQU	$01		; IO Direction register Port B (1=input, 0=output)
+GPIOA		EQU	$12		; IO Port A, read and write
+GPIOB		EQU	$13		; IO Port B, read and write
+
+; VIA 1 Register Indices ********************************************************
 VIA_PORTB     	EQU  	$00  		; Port B input/output register
 VIA_PORTA     	EQU  	$01  		; Port A input/output register
 VIA_DDRB   	EQU  	$02		; Port B data direction register
@@ -31,7 +40,7 @@ VIA_IFR    	EQU  	$0D		; Interrupt flag register
 VIA_IER    	EQU  	$0E		; Interrupt enable register
 VIA_PANOHS 	EQU  	$0F
 
-; VIA 2 Register Indices *******************************************************
+; VIA 2 Register Indices (SD-card, sound, etc.) *********************************
 PORTB     	EQU  	$10  		; Port B input/output register
 PORTA     	EQU  	$11  		; Port A input/output register
 DDRB   		EQU  	$12		; Port B data direction register
@@ -66,14 +75,7 @@ ESC       	EQU     $1B    		; ESC
 SPC		EQU     $20		; space char
 
 ; Tape Reader/Writer Constants *************************************************
-SYNCMARK	EQU	$2E		; synchronisation mark
-NAMEMARK	EQU	$A0		; start of name mark
-ADDRMARK	EQU	$A1		; start of address mark
-FILEMARK	EQU	$1F		; start of file mark
-
 RPTIME		EQU	49		; read point time   49x8uS     = 392uS
-LPTIME		EQU	190		; long pulse time   190uS+50uS = 240uS
-SPTIME		EQU	60		; short pulse time  60uS+50uS  = 120uS
 
 ; Device Driver Constants ******************************************************
 KBD_MAGIC_NUM   EQU	129             ; magic number of keyboard ROM
@@ -211,10 +213,8 @@ TICKCNT         EQU     $DA             ; current tick counter
 SD_TYPE		EQU	$DB		; SD Card Type: $00 Byte mode, $40 LBA mode
 BLKBUF		EQU	$DC             ; pointer to block buffer
 BLKBUFL		EQU	$DC             ; lower byte of block buffer pointer
-CHECKSUM	EQU	$DC		; TAPE file checksum
 CRCL      	EQU   	$DC      	; XModem CRC lo byte
 BLKBUFH		EQU	$DD             ; upper byte of block buffer pointer
-OUTBYTE		EQU	$DD		; TAPE data byte read/written from/to tape
 CRCH      	EQU   	$DD     	; XModem CRC hi byte
 SD_CMD		EQU	$DE		; SD-Card CMD Byte
 RETRYL    	EQU   	$DE      	; XModem retry counter lo byte
@@ -233,7 +233,6 @@ KEY     	EQU     $E1   		; MON 1-byte Editor
 SD_PB1      	EQU   	$E1   		; SD-Card Parameter Byte 1
 LINECNT		EQU	$E1		; DISASSEM number of disassembled lines
 BFLAG     	EQU   	$E1      	; XModem block flag
-EQUFLAG		EQU	$E1		; TAPE file name equal flag
 BEGADR  	EQU     $E2   		; MON 2-byte Editor Begin Address Pointer
 SD_PB0		EQU	$E2   		; SD-Card Parameter Byte 0
 ADRMODE		EQU	$E2		; DISASSEM addressing mode
@@ -243,7 +242,7 @@ IBYTES		EQU	$E3		; DISASSEM instruction byte count
 ERRCNT    	EQU   	$E3      	; XModem error counter 10 is the limit
 ENDADR  	EQU     $E4   		; MON 2-byte Editor End Address Pointer
 VIA_STATUS 	EQU	$E4 		; VIA2 current VIA2 PortB output status
-KEY_SENSE	EQU	$E5		; TAPE datasette key sense flag
+
 CURADR  	EQU     $E6   		; MON 2-byte Editor Current Address Pointer
 ASCL	  	EQU   	$E6     	; MON ASCII list start address low
 PLBA		EQU	$E6		; LBA pointer
@@ -259,7 +258,7 @@ PSTRL     	EQU   	$EA      	; ACIA lower address byte of output string pointer
 PSTRH     	EQU   	$EB      	; ACIA upper address byte of output string pointer
 TABLEA  	EQU     $EC   		; MON 2-byte Editor 
 WBUF      	EQU   	$EC      	; ACIA character output buffer
-BITCNT		EQU	$ED		; TAPE current read bit count
+
 LABELS  	EQU     $EE   		; MON 1-byte Editor 
 PSAV            EQU     $EE		; MON
 PCL		EQU	$EF		; CPU program counter Low

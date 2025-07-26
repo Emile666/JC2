@@ -32,6 +32,8 @@
 ; 2.27	  - INPBUF moved from $768 to $1868. Also moved Decss, Decssp1, ADREL, ADREH, ADRSL, ADRSH to lower ZP-addresses
 ; 2.28	  Bugfix ADREL/ADREH, ADRSL/ADRSH. They had other names in BIOS, so should not be removed!
 ;	  Bugfix MODE and NUML/NUMH no init. in LAB_LOAD.
+; 2.29	- PORTIO, PORT() and PORT commands extended with extra VIA and MCP23017 ports from JC2 V4.1 and IO2 boards
+;       - SOUND command added
 ; ********************************************************************************************************
 
 ; changes by Joerg Walke
@@ -327,9 +329,9 @@ TK_RUN		= TK_GOTO+1		; RUN token
 TK_IF		= TK_RUN+1		; IF token
 TK_RESTORE	= TK_IF+1		; RESTORE token
 TK_GOSUB	= TK_RESTORE+1		; GOSUB token
-TK_RETIRQ	= TK_GOSUB+1		; RETIRQ token
-TK_RETNMI	= TK_RETIRQ+1		; RETNMI token
-TK_RETURN	= TK_RETNMI+1		; RETURN token
+TK_SOUND	= TK_GOSUB+1		; SOUND token
+TK_RES2		= TK_SOUND+1		; RES2 token
+TK_RETURN	= TK_RES2+1		; RETURN token
 TK_REM		= TK_RETURN+1		; REM token
 TK_STOP		= TK_REM+1		; STOP token
 TK_ON		= TK_STOP+1		; ON token
@@ -354,9 +356,9 @@ TK_GET		= TK_WIDTH+1		; GET token
 TK_SWAP		= TK_GET+1		; SWAP token
 TK_BITSET	= TK_SWAP+1		; BITSET token
 TK_BITCLR	= TK_BITSET+1		; BITCLR token
-TK_IRQ		= TK_BITCLR+1		; IRQ token
-TK_NMI		= TK_IRQ+1		; NMI token
-TK_BEEP		= TK_NMI+1		; BEEP token
+TK_RES3		= TK_BITCLR+1		; RES3 token
+TK_RES4		= TK_RES3+1		; RES4 token
+TK_BEEP		= TK_RES4+1		; BEEP token
 TK_PLIST    	= TK_BEEP+1		; PLIST token
 TK_HOME		= TK_PLIST+1		; HOME token
 TK_CLS		= TK_HOME+1		; CLS token
@@ -390,7 +392,7 @@ TK_NOT		= TK_THEN+1		; NOT token
 TK_STEP		= TK_NOT+1		; STEP token
 TK_UNTIL	= TK_STEP+1		; UNTIL token
 TK_WHILE	= TK_UNTIL+1		; WHILE token
-TK_OFF		= TK_WHILE+1		; OFF token
+TK_OFF		= TK_WHILE+1		; OFF token, removed!
 
 ; opperator tokens
 
@@ -1703,11 +1705,11 @@ LAB_CONT
 	LDX	#$1E			; error code $1E ('Can't continue' error)
 	JMP	LAB_XERR		; do error #X, then warm start
 					; we can continue so ..
-LAB_166C
-	LDA	#TK_ON			; set token for ON
-	JSR	LAB_IRQ			; set IRQ flags
-	LDA	#TK_ON			; set token for ON
-	JSR	LAB_NMI			; set NMI flags
+LAB_166C	; 21-07-25 Emile removed
+	;LDA	#TK_ON			; set token for ON
+	;JSR	LAB_IRQ			; set IRQ flags
+	;LDA	#TK_ON			; set token for ON
+	;JSR	LAB_NMI			; set NMI flags
 
 	STY	Bpntrh			; save BASIC execute pointer high byte
 	LDA	Cpntrl			; get continue pointer low byte
@@ -2077,20 +2079,8 @@ LAB_16FD
 	JMP	LAB_SNER		; do syntax error then warm start
 
 ; perform ON
-LAB_ON
-	CMP	#TK_IRQ			; was it IRQ token ?
-	BNE	LAB_NOIN		; if not go check NMI
-
-	JMP	LAB_SIRQ		; else go set-up IRQ
-
-LAB_NOIN
-	CMP	#TK_NMI			; was it NMI token ?
-	BNE	LAB_NONM		; if not go do normal ON command
-
-	JMP	LAB_SNMI		; else go set-up NMI
-
-LAB_NONM
-	JSR	LAB_GTBY		; get byte parameter
+; 21-7-25 Emile: ON {IRQ|NMI} removed
+LAB_ON	JSR	LAB_GTBY		; get byte parameter
 	PHA				; push GOTO/GOSUB token
 	CMP	#TK_GOSUB		; compare with GOSUB token
 	BEQ	LAB_176B		; branch if GOSUB
@@ -2098,7 +2088,6 @@ LAB_NONM
 	CMP	#TK_GOTO		; compare with GOTO token
 LAB_1767
 	BNE	LAB_16FD		; if not GOTO do syntax error then warm start
-
 
 ; next character was GOTO or GOSUB
 LAB_176B
@@ -7078,101 +7067,7 @@ LAB_FB95
 LAB_FB96
 	RTS
 
-; these routines only enable the interrupts if the set-up flag is set
-; if not they have no effect
-
-; perform IRQ {ON|OFF|CLEAR}
-LAB_IRQ
-	LDX	#IrqBase		; set pointer to IRQ values
-	.byte	$2C			; make next line BIT abs.
-
-; perform NMI {ON|OFF|CLEAR}
-LAB_NMI
-	LDX	#NmiBase		; set pointer to NMI values
-	CMP	#TK_ON			; compare with token for ON
-	BEQ	LAB_INON		; go turn on interrupt
-
-	CMP	#TK_OFF			; compare with token for OFF
-	BEQ	LAB_IOFF		; go turn off interrupt
-
-	EOR	#TK_CLEAR		; compare with token for CLEAR, A = $00 if = TK_CLEAR
-	BEQ	LAB_INEX		; go clear interrupt flags and return
-
-	JMP	LAB_SNER		; do syntax error then warm start
-
-LAB_IOFF
-	LDA	#$7F			; clear A
-	AND	PLUS_0,X		; AND with interrupt setup flag
-	BPL	LAB_INEX		; go clear interrupt enabled flag and return
-
-LAB_INON
-	LDA	PLUS_0,X		; get interrupt setup flag
-	ASL				; Shift bit to enabled flag
-	ORA	PLUS_0,X		; OR with flag byte
-LAB_INEX
-	STA	PLUS_0,X		; save interrupt flag byte
-	JMP	LAB_IGBY		; update BASIC execute pointer and return
-
-; these routines set up the pointers and flags for the interrupt routines
-; note that the interrupts are also enabled by these commands
-
-; perform ON IRQ
-LAB_SIRQ
-	CLI				; enable interrupts
-	LDX	#IrqBase		; set pointer to IRQ values
-	.byte	$2C			; make next line BIT abs.
-
-; perform ON NMI
-LAB_SNMI
-	LDX	#NmiBase		; set pointer to NMI values
-
-	STX	TempB			; save interrupt pointer
-	JSR	LAB_IGBY		; increment and scan memory (past token)
-	JSR	LAB_GFPN		; get fixed-point number into temp integer
-	LDA	Smeml			; get start of mem low byte
-	LDX	Smemh			; get start of mem high byte
-	JSR	LAB_SHLN		; search Basic for temp integer line number from AX
-	BCS	LAB_LFND		; if carry set go set-up interrupt
-
-	JMP	LAB_16F7		; else go do 'Undefined statement' error and warm start
-
-LAB_LFND
-	LDX	TempB			; get interrupt pointer
-	LDA	Baslnl			; get pointer low byte
-	SBC	#$01			; -1 (carry already set for subtract)
-	STA	PLUS_1,X		; save as interrupt pointer low byte
-	LDA	Baslnh			; get pointer high byte
-	SBC	#$00			; subtract carry
-	STA	PLUS_2,X		; save as interrupt pointer high byte
-
-	LDA	#$C0			; set interrupt enabled/setup bits
-	STA	PLUS_0,X		; set interrupt flags
-LAB_IRTS
-	RTS
-
-; return from IRQ service, restores the enabled flag.
-
-; perform RETIRQ
-LAB_RETIRQ
-	BNE	LAB_IRTS		; exit if following token (to allow syntax error)
-
-	LDA	IrqBase			; get interrupt flags
-	ASL				; copy setup to enabled (b7)
-	ORA	IrqBase			; OR in setup flag
-	STA	IrqBase			; save enabled flag
-	JMP	LAB_16E8		; go do rest of RETURN
-
-; return from NMI service, restores the enabled flag.
-
-; perform RETNMI
-LAB_RETNMI
-	BNE	LAB_IRTS		; exit if following token (to allow syntax error)
-
-	LDA	NmiBase			; get set-up flag
-	ASL				; copy setup to enabled (b7)
-	ORA	NmiBase			; OR in setup flag
-	STA	NmiBase			; save enabled flag
-	JMP	LAB_16E8		; go do rest of RETURN
+; 21-07-'25 Emile LAB_IRQ, LAB_NMI, LAB_SIRQ, LAB_SNMI, RETIRQ and RETNMI removed (+105 bytes)
 
 ; MAX() MIN() pre process
 LAB_MMPP
@@ -7564,20 +7459,6 @@ LAB_GETDEVID
 	ORA	#$10			; search for stdio devices
 	RTS
 
-; Select GPIO Device **********************
-LAB_SEL_PORT
-	CPX	#$01
-	BNE	LAB_PORTA
-	LDY	#VIA_PORTB
-	CLC
-	RTS
-LAB_PORTA
-	CPX	#$02
-	BCS	LAB_I2C_ADR	
-	LDY	#VIA_PORTA
-LAB_I2C_ADR
-	RTS
-
 ; perform LOAD ****************************
 LAB_LOAD 
 	BNE	LOAD_DEV		; if no following token use device 0
@@ -7727,41 +7608,120 @@ LAB_PRNUM
 	JSR	LAB_GETDEVID
 	JMP	SET_STDOUTID		; and set it as standard output device
 
-; perform PORTIO **************************
+; perform PORTIO ******************************************************************************
+; Set Port-bits to Input (0) or Output (1). Port number is between 0 and 9.
+; Port 0,1: PORTA, PORTB on VIA U5 on IO-board
+; Port 2,3: PORTA, PORTB on VIA U15 on JC2 V4.1 main-board (not present on V3.1 main-board)
+; Port 4,5: PORTA, PORTB on MCP23017 with I2C-address $40
+; Port 6,7: PORTA, PORTB on MCP23017 with I2C-address $42
+; Port 8,9: PORTA, PORTB on MCP23017 with I2C-address $44
+; *********************************************************************************************
 LAB_PORTIO
 	BEQ	LAB_SYNTAX_ERR		; if no following token, exit and throw syntax error
-	JSR	LAB_GET2BYTEPARMS	; get two parameters
-	TYA
-	JSR	LAB_SEL_PORT		; get port
-	BCS	LAB_I2C_DEV
-	INY				; add 2 because we want to write DDR
-	INY
-	STA	(IOBASE),Y
-LAB_I2C_DEV
-	RTS
+	JSR	LAB_GET2BYTEPARMS	; get two parameters: X = par1 (0=PORTA, 1=PORTB, ..), Y = par2 (value to write)
+	TYA				; A = par2, value to write to data dir. register
+	CPX	#4			; Is it a VIA (U5 on IO-board or U15 on JC2 V4.1 main board)?
+	BCS	MCPIO			; branch if not a VIA, might be a MCP23017
+	
+	; X = 0, 1, 2 or 3. Either VIA U5 on IO-board or VIA U15 on JC2 V4.1 main-board
+	PHA				; save value to write to DDR register
+	TXA				; A = port number 0, 1, 2 or 3
+	EOR	#$01			; A = 0->1, A=1->0, A=2->3, A=3->2
+	ORA	#$02			; A = 2 (X=1 or X=3) or A = 3 (X=0 or X=2)
+	TAY				; Y = DDRB (X=1 or X=3) or Y = DDRA (X=0 or X=2)
+	PLA				; get value to write back
+	
+VIA_WR	CPX	#2			; VIA U5 on IO-board?
+	BCS	VIA_U15			; branch if it is VIA on JC2 V4.1 main-board
+	
+	STA	(IOBASE),Y		; store in VIA (U5) of IO board, DDRA (X=0,Y=1) or DDRB (X=1,Y=0) register
+	RTS				; return
 
-; perform PORTOUT *************************
+VIA_U15	; VIA on new JC2 main-board (V4.1), is has a fixed address of $1750-$175F
+	STA	$1750,Y			; Y = 2 or 3, VIA on JC2 V4.1 main-board, fixed address $1750
+LPIO_X	RTS
+
+MCPIO	; X > 4, either a MCP23017 or a port number error
+	CPX	#10
+	BCS	LPIO_X			; Error if port number > 9
+	
+	; ------------------------------------------------------------------------------------------
+	; The MCP23017 direction registers are IODIRA ($00) and IODIRB ($01)
+	;
+	; A: value to write to register
+	; X: port number [4..9]
+	; ------------------------------------------------------------------------------------------
+	EOR	#$FF			; Invert all bytes, since 0 = output for a MCP23017 but input for a VIA
+	TAY				; Y = databyte to write into IODIRx register
+	TXA				; A = port number [4..9]
+	AND	#$FE			; clear bit 0 of port number, A is now 4, 6 or 8
+	CLC
+	ADC	#MCP23017_I2C_0-4	; A = $40 (ports 4 & 5), $42 (ports 6 & 7) or $44 (ports 8 & 9)
+	PHA				; save I2C-address
+	TXA				; A = port number [4..9]
+	AND	#$01			; A = 0 or 1
+	TAX				; X = 0 (IODIRA) or 1 (IODIRB)
+	PLA				; Get I2C-address back
+	JMP 	MCP23017_WRITE		; A = I2C-addr, X = register, Y = data to write and return
+	
+;--------------------------------------------------------------------------------------------- 
+; Input  : X: Port number for MCP23017 ICs [4..9]
+; Outputs: A: I2C-address of MCP23017: $40, $42 or $44
+;          X: $12 (GPIOA) or $13 (GPIOB)
+;--------------------------------------------------------------------------------------------- 
+PORT2GPIO
+	TXA				; A = port number [4..9]
+	AND	#$FE			; clear bit 0 of I2C-address
+	CLC
+	ADC	#MCP23017_I2C_0-4	; A = $40 (ports 4 & 5), $42 (ports 6 & 7) or $44 (ports 8 & 9)
+	PHA				; save I2C-address
+	TXA				; A = port number [4..9]
+	AND	#$01			; A = 0 or 1
+	CLC
+	ADC	#GPIOA			; $12 = GPIOA
+	TAX				; X = $12 (GPIOA) or 1 (GPIOB)
+	PLA				; Get I2C-address back
+	RTS				; return
+	
+; perform PORTOUT ****************************************************************************
+; Write Port outputbits. Port number is between 0 and 9.
+; Port 0,1: PORTA, PORTB on VIA U5 on IO-board
+; Port 2,3: PORTA, PORTB on VIA U15 on JC2 V4.1 main-board (not present on V3.1 main-board)
+; Port 4,5: PORTA, PORTB on MCP23017 with I2C-address $40
+; Port 6,7: PORTA, PORTB on MCP23017 with I2C-address $42
+; Port 8,9: PORTA, PORTB on MCP23017 with I2C-address $44
+; *********************************************************************************************
 LAB_PORTOUT
 	BEQ	LAB_SYNTAX_ERR		; if no following token, exit and throw syntax error
-	JSR	LAB_GET2BYTEPARMS	; get two parameters
-	TYA
-	JSR	LAB_SEL_PORT		; get port
-	BCS	LAB_WRITEI2C		; port id > 1 -> write to i2c port
-	STA	(IOBASE),Y
-	RTS
+	JSR	LAB_GET2BYTEPARMS	; get two parameters: X = par1 (0=PORTA, 1=PORTB, ..), Y = par2 (value to write)
+	TYA				; A = par2, value to write to data dir. register
+	CPX	#4			; Is it a VIA (U5 on IO-board or U15 on JC2 V4.1 main board)?
+	BCS	MCP_OUT			; branch if not a VIA, might be a MCP23017
+
+	; X = 0, 1, 2 or 3. Either VIA U5 on IO-board or VIA U15 on JC2 V4.1 main-board
+	PHA				; save value to write to DDR register
+	TXA				; A = port number 0, 1, 2 or 3
+	EOR	#$01			; A = 0->1, A=1->0, A=2->3, A=3->2
+	AND	#$01			; A = 0 (X=1 or X=3) or A = 1 (X=0 or X=2)
+	TAY				; Y = PORTB (X=1 or X=3) or Y = PORTA (X=0 or X=2)
+	PLA				; get value to write back
+	JMP	VIA_WR			; Write value into VIA PORTA or PORTB register
 
 LAB_SYNTAX_ERR
 	JMP	LAB_SNER		; throw syntax error and return
 
-; perform WRITEI2C ************************
-LAB_WRITEI2C
-	STA	Temp1			; save data byte to Temp1
-	JSR	I2C_START		; Send I2C Start Condition
-	TXA				; transfer device address into A
-	JSR	I2C_WRITE_DEV		; Write I2C Device, set write mode. C = 1 acknowledged
-	LDA	Temp1			; restore data byte to A
-	JSR	I2C_SEND		; Send a Byte to I2C Device, C = 1 acknowledged
-	JMP	I2C_STOP		; Send I2C Stop Condition and return
+MCP_OUT	; X > 4, either a MCP23017 or a port number error
+	CPX	#10
+	BCS	LPIO_X			; Error if port number > 9
+
+	; ------------------------------------------------------------------------------------------
+	; The MCP23017 output registers are GPIOA ($12) and GPIOB ($13)
+	; A: value to write to register
+	; X: port number [4..9]
+	; ------------------------------------------------------------------------------------------
+	TAY				; Y = databyte to write into GPIOx register
+	JSR	PORT2GPIO		; Returns A=I2C-address, X= GPIOA or GPIOB
+	JMP 	MCP23017_WRITE		; A = I2C-addr, X = register, Y = data to write and return
 
 ; perform I2C write operations ************
 LAB_I2COUT
@@ -7813,26 +7773,48 @@ I2C_RD_X
 	LDY	I2Cstat			; load I2C-status byte in Y
 	JMP	LAB_1FD0		; convert Y to byte in FAC1 and return
 	
-; perform PORTIN **************************
+; perform PORTIN *****************************************************************************
+; Read Port inputbits. Port number is between 0 and 9.
+; Port 0,1: PORTA, PORTB on VIA U5 on IO-board
+; Port 2,3: PORTA, PORTB on VIA U15 on JC2 V4.1 main-board (not present on V3.1 main-board)
+; Port 4,5: PORTA, PORTB on MCP23017 with I2C-address $40
+; Port 6,7: PORTA, PORTB on MCP23017 with I2C-address $42
+; Port 8,9: PORTA, PORTB on MCP23017 with I2C-address $44
+; *********************************************************************************************
 LAB_PORTIN
 	JSR	LAB_EVBY		; evaluate byte expression, result in X
-	JSR	LAB_SEL_PORT		; get port
-	BCS	LAB_READI2C		; port id > 1 -> read from i2c port
-	LDA	(IOBASE),Y
-	TAY				; copy received byte into Y
-	JMP	LAB_1FD0		; convert Y to byte in FAC1 and return
+	CPX	#4			; Is it a VIA (U5 on IO-board or U15 on JC2 V4.1 main board)?
+	BCS	MCP_IN			; branch if not a VIA, might be a MCP23017
 
-; perform READI2C *************************
-LAB_READI2C
-	JSR	I2C_START		; Send I2C Start Condition
-	TXA				; transfer device address into A
-	JSR	I2C_READ_DEV		; Read I2C Device, set read mode. Return C = 1 acknowledged
-	JSR	 I2C_RCV		; Receive a Byte from I2C Device 
-	STA	Temp1
-	JSR	I2C_STOP		; Send I2C Stop Condition
-	LDY	Temp1			; load byte to Y
-	JMP	LAB_1FD0		; convert Y to byte in FAC1 and return
+	; X = 0, 1, 2 or 3. Either VIA U5 on IO-board or VIA U15 on JC2 V4.1 main-board
+	TXA				; A = port number 0, 1, 2 or 3
+	EOR	#$01			; A = 0->1, A=1->0, A=2->3, A=3->2
+	AND	#$01			; A = 0 (X=1 or X=3) or A = 1 (X=0 or X=2)
+	TAY				; Y = PORTB (X=1 or X=3) or Y = PORTA (X=0 or X=2)
+	CPX	#2			; VIA U5 on IO-board?
+	BCS	U15_IN			; branch if it is VIA on JC2 V4.1 main-board
+	
+	LDA	(IOBASE),Y		; Load from VIA (U5), PORTA (X=0) or PORTB (X=1)
+	JMP	PIN_X			; convert byte and return it
 
+U15_IN	; VIA on new JC2 main-board (V4.1), is has a fixed address of $1750-$175F
+	LDA	$1750,Y			; Y = 0 or 1, VIA on JC2 V4.1 main-board
+PIN_X	TAY				; copy received byte into Y
+	JMP	LAB_1FD0		; convert Y to byte in FAC1 and return
+	
+MCP_IN	CPX	#10
+	BCC	MCPRC			; Continue if port number < 10
+
+	RTS				; return if port number > 9
+	
+	; ------------------------------------------------------------------------------------------
+	; The MCP23017 input registers are GPIOA ($12) and GPIOB ($13)
+	; X: port number [4..9]
+	; ------------------------------------------------------------------------------------------
+MCPRC	JSR	PORT2GPIO		; Returns A=I2C-address, X= GPIOA or GPIOB
+	JSR	MCP23017_READ		; A = I2C-address of MCP23017 ($40, $42 or $44), X = register to read from
+	JMP	PIN_X			; convert byte and return
+	
 ; perform DELAY *************************
 LAB_DELAY
 	JSR	LAB_EVNM		; evaluate expression and check is numeric,
@@ -7880,6 +7862,54 @@ LAB_SET_TIMER
 	BNE	LAB_SET_TIMER
 	RTS
 
+; perform SOUND ****************************************************************************
+; SOUND sends data to the SN76489 sound-generator.
+; Syntax: SOUND ch, N, att
+;   ch = 0, 1, 2, 3: channel number, channel 3 is the noise channel
+;   N: 1-1023: 10-bit number: frequency = 125000/N for ch = 0, 1 or 2
+;      000-111 bit 2 = FB (0 = Periodic, 1= White Noise), bit 1 = NF0, bit 0 = NF1
+;   att: attenutation: 0 = 0 dB, 1 = 2 dB ... 14 = 28 dB, 15 = OFF
+; *********************************************************************************************
+LAB_SOUND
+	BNE	SND_CONT		; branch if tokens present
+	JMP	LAB_SYNTAX_ERR		; if no following token, exit and throw syntax error
+SND_CONT
+	JSR	LAB_GTBY		; get first byte parameter (ch) into X
+	TXA				; A = channel number
+	AND	#$03			; Only channels 0-3 are allowed
+	STA	Temp1			; Temp1 = channel number 
+	JSR	LAB_1C01		; check for ',' else syntax error
+
+	JSR	LAB_EVNM		; evaluate expression and check if numeric, else do type mismatch
+	JSR	LAB_F2FX		; convert floating-to-fixed
+	STY	Frnxtl			; save pointer low byte (float to fixed returns word in AY)
+	AND	#$03			; only bits 9 and 8 are valid
+	STA	Frnxth			; save pointer high byte
+	JSR	LAB_1C01		; check for ',' else syntax error
+	LDX	Temp1			; Get channel number
+	CPX	#3			; ch 3 = noise-channel
+	BCS	NOISE_CH		; branch if noise-channel
+
+	TXA				; A = channel number: 0, 1 or 2
+	LDX	Frnxtl			; Get frequency low byte
+	LDY	Frnxth			; Get frequency bits 9 and 8
+	JSR	SOUND_SETFREQ		; A - Channel (0..2), X - Freq. LSB 7..0, Y - Freq. MSB 9..8
+	JMP	SEND_ATTN		; branch always
+
+NOISE_CH				; Channel 3, noise channel
+	LDA	Frnxtl			; 000-111 bit 2 = FB (0 = Periodic, 1= White Noise), bit 1 = NF0, bit 0 = NF1  
+	AND	#$07			; Only use bits 2-0
+	ORA	#$E0			; Noise control register
+	JSR	SOUND_SENDBYTE		; send complete command byte to the sound chip
+
+SEND_ATTN				; Send attenuation to SN76489
+	JSR	LAB_GTBY		; get 3rd byte parameter (att) into X
+	TXA				; A = attenuation
+	AND	#$0F			; Only 0-15 is allowed
+	TAX				; X = attenuation [0..15]
+	LDA	Temp1			; A = channel number
+	JMP	SOUND_SETATN		; A = channel [0..3], X = att. level [0..15] and return
+
 ; *****************************************
 
 LAB_SCREEN	
@@ -7889,6 +7919,10 @@ LAB_OVAL
 LAB_COLOR
 LAB_RECT
 			
+LAB_RES1
+LAB_RES2
+LAB_RES3
+LAB_RES4
 LAB_RES5
 LAB_RES6
 	RTS
@@ -7978,7 +8012,7 @@ StrTab
 EndTab
 
 LAB_MSZM
-	.by	'Enhanced BASIC 2.28',$0A,$00
+	.by	'Enhanced BASIC 2.29',$0A,$00
 ;	.byte	$0D,$0A,'Memory size ',$00
 
 LAB_SMSG
@@ -8115,8 +8149,8 @@ LAB_CTBL
 	.word	LAB_IF-1		; IF
 	.word	LAB_RESTORE-1		; RESTORE	modified command
 	.word	LAB_GOSUB-1		; GOSUB
-	.word	LAB_RETIRQ-1		; RETIRQ	new command
-	.word	LAB_RETNMI-1		; RETNMI	new command
+	.word	LAB_SOUND-1		; SOUND	
+	.word	LAB_RES2-1		; RET2
 	.word	LAB_RETURN-1		; RETURN
 	.word	LAB_REM-1		; REM
 	.word	LAB_STOP-1		; STOP
@@ -8142,8 +8176,8 @@ LAB_CTBL
 	.word	LAB_SWAP-1		; SWAP		new command
 	.word	LAB_BITSET-1		; BITSET	new command
 	.word	LAB_BITCLR-1		; BITCLR	new command
-	.word	LAB_IRQ-1		; IRQ		new command
-	.word	LAB_NMI-1		; NMI		new command
+	.word	LAB_RES3-1		; RES3
+	.word	LAB_RES4-1		; RES4		
 	.word	LAB_BEEP-1		; BEEP		new command (Junior Computer 2)
 	.word	LAB_PLIST-1		; PLIST		new command (Junior Computer 2)
 	.word	LAB_HOME-1		; HOME		new command (Junior Computer 2)
@@ -8490,8 +8524,6 @@ LBB_INT
 	.byte	'NT(',TK_INT		; INT(
 LBB_INVERSE
     	.byte   'NVERSE',TK_INVERSE 	; INVERSE
-LBB_IRQ
-	.byte	'RQ',TK_IRQ		; IRQ
 	.byte	$00
 TAB_ASCL
 LBB_LCASES
@@ -8531,8 +8563,6 @@ LBB_NEW
 	.byte	'EW',TK_NEW		; NEW
 LBB_NEXT
 	.byte	'EXT',TK_NEXT		; NEXT
-LBB_NMI
-	.byte	'MI',TK_NMI		; NMI
 LBB_NOT
 	.byte	'OT',TK_NOT		; NOT
 LBB_NORMAL
@@ -8582,12 +8612,13 @@ LBB_RECT
 LBB_REM
 	.byte	'EM',TK_REM		; REM
 LBB_RESTORE
-	.byte	'ESTORE',TK_RESTORE
-					; RESTORE
-LBB_RETIRQ
-	.byte	'ETIRQ',TK_RETIRQ	; RETIRQ
-LBB_RETNMI
-	.byte	'ETNMI',TK_RETNMI	; RETNMI
+	.byte	'ESTORE',TK_RESTORE	; RESTORE
+LBB_RES2
+	.byte	'ES2',TK_RES2		; RES2
+LBB_RES3
+	.byte	'ES3',TK_RES3		; RES3
+LBB_RES4
+	.byte	'ES4',TK_RES4		; RES4
 LBB_RES5
 	.byte	'ES5(',TK_RES5		; RES5
 LBB_RES6
@@ -8613,6 +8644,8 @@ LBB_SGN
 	.byte	'GN(',TK_SGN		; SGN(
 LBB_SIN
 	.byte	'IN(',TK_SIN		; SIN(
+LBB_SOUND
+	.byte	'OUND',TK_SOUND		; SOUND
 LBB_SPC
 	.byte	'PC(',TK_SPC		; SPC(
 LBB_SQR
@@ -8699,10 +8732,10 @@ LAB_KEYT
 	.word	LBB_RESTORE		; RESTORE
 	.byte	5,'G'
 	.word	LBB_GOSUB		; GOSUB
-	.byte	6,'R'
-	.word	LBB_RETIRQ		; RETIRQ
-	.byte	6,'R'
-	.word	LBB_RETNMI		; RETNMI
+	.byte	5,'S'
+	.word	LBB_SOUND		; SOUND
+	.byte	4,'R'
+	.word	LBB_RES2		; RES2
 	.byte	6,'R'
 	.word	LBB_RETURN		; RETURN
 	.byte	3,'R'
@@ -8753,10 +8786,10 @@ LAB_KEYT
 	.word	LBB_BITSET		; BITSET
 	.byte	6,'B'
 	.word	LBB_BITCLR		; BITCLR
-	.byte	3,'I'
-	.word	LBB_IRQ			; IRQ
-	.byte	3,'N'
-	.word	LBB_NMI			; NMI
+	.byte	4,'R'
+	.word	LBB_RES3		; RES3
+	.byte	4,'R'
+	.word	LBB_RES4		; RES4
 	.byte	4,'B'
 	.word	LBB_BEEP		; BEEP
 	.byte	5,'P'
