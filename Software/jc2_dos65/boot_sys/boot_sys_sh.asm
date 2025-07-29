@@ -747,24 +747,37 @@ CFC_SAVE	STXY	FNAME_PTR
 		LDXYI	FILENAME		; 
 		JSR	OS_STRING_OUT		; Print FN83 filename
 		PRCH	']'
-		SBW	$2000 #$2000		; Get net file-size
-		LSR	$2001			; $2000 now contains #sectors of 512 bytes needed
-		LDA	D_SECT_PER_CLST		; Convert to #clusters
-DIV_SPC		LSR	$2001			; $2000 = $2000 / D_SECT_PER_CLST
-		LSR
-		BNE	DIV_SPC			; branch if not done with shifting
+		MWA	$2000 SAVE_LEN		; SAVE_LEN = end-address
+		SBW	SAVE_LEN #$2000		; Get net file-size
+		MVA	SAVE_LEN+1 SAVE_SECS	; SAVE_SECS now contains #pages of 256 bytes
+		LSR	SAVE_SECS		; SAVE_SECS now contains #sectors of 512 bytes needed
+		LDA.EQ	SAVE_LEN NO_ADD_SEC	; branch if LSB of SAVE_LEN is 0
+
+		INC	SAVE_SECS		; Add 1 to SAVE_SECS if LSB of SAVE_LEN is not 0
+NO_ADD_SEC	PRSTR	TXT_SECND1		; Print ', size: '
+		LDXY	SAVE_LEN		; Size in bytes
+		JSR	PRINT_INT16		; Print it
+		PRSTR	TXT_SECND2		; Print ', sec: '
+		LDA	SAVE_SECS		; Get sector count
+		JSR	NUMOUT			; Print #sectors needed
+		JSR	CROUT			; Print CR
 		
-		LDA.EQ	$2000 NO_ADD_SEC
-		INC 	$2001			; add 1 if last part of file is not empty
-NO_ADD_SEC	PRSTR	TXT_CLND		; Print 'Clusters needed: '
-		LDA	$2001			; Get cluster count
-		JSR	NUMOUT			; Print #clusters needed
-		JSR	CROUT
+		PRSTR	TXT_OS_CREATE		; Print 'OS_CREATE'
+		LDA	#FA_ARCHIVE		; File is modified 
+		JSR	OS_CREATE		; Create file in current dir. and update FAT
+		PRSTR	TXT_OS_SAVFILE		; Print 'OS_SAVE_FILE'
+		JSR	OS_SAVE_FILE		; Save contents of file
+		JSR	SIS_DEL			; Subtract #allocated clusters from SIS and write back to disk
 		SEC				; C=1: OK
 		RTS				; return
 
 TXT_SAVE	.by	'CFC_SAVE: $' $00
-TXT_CLND	.by	', clusters needed: ' $00
+TXT_SECND1	.by	', size: ' $00
+TXT_SECND2	.by	', sec: ' $00
+SAVE_LEN	.word	$0000			; #bytes to save
+SAVE_SECS	.byte	$00			; #sectors (of 512 B) to save
+TXT_OS_CREATE	.by	'OS_CREATE' CR $00
+TXT_OS_SAVFILE 	.by	'OS_SAVE_FILE' CR $00
 
 ; **** Add subdir name to D_SUBDIR_NAME ****************************************
 ; Check if directory entered is current dir (..).
@@ -848,7 +861,7 @@ SH_CD_ERR       JSR     LOAD_ACT_DIR        	; error - restore actual directory 
 ;       FAT[CURR_CLUSTER] = 0L; // 0L = free entry
 ;       if (CURR_CLUSTER == 0FFFFFFF) SCNT++; goto loop;
 ; ******************************************************************************
-CLR_FAT32_FILE 	MVX 	#0 SCNT				; #clusters cleared
+CLR_FAT32_FILE 	MVX 	#0 SIS_CNT			; #clusters cleared
 CLR_FAT32_LP1	LDXYI   D_START_FAT1      		; load base block address of FAT into NUM32[0:3]
                 JSR     LOAD_32		    		; NUM32 = LBA nr. of FAT
 		LDXYI	(CURR_CLUSTER+1)			; SUM32 = CURR_CLUSTER into SUM32
@@ -879,7 +892,7 @@ LP_FAT_ENTRY    JSR     READ_ENTRY_BYTE     		; read entry byte
                 INX					; Increment CURR_CLUSTER counter
                 DEC.NE  NCNT LP_FAT_ENTRY   		; loop until all bytes copied
 		MVAX	4 TEMP_CLUSTER CURR_CLUSTER	; CURR_CLUSTER = TEMP_CLUSTER
-		INC	SCNT				; #clusters cleared + 1
+		INC	SIS_CNT				; #clusters cleared + 1
 		CPD	#$0FFFFFFF CURR_CLUSTER		; CURR_CLUSTER == $0FFFFFFF ?
 		BNE	CLR_FAT32_LP1			; branch if file has more clusters to clear
 		
@@ -915,7 +928,7 @@ SH_DEL          JSR     SAVE_ACT_DIR        			; save actual directory LBA
                 BCC     SH_DEL_ERR				; branch if file not found
 
 		; OS_FIND_FILE did already set CURR_CLUSTER to the file starting-cluster
-		LDY	#D_FILENAME
+SH_DEL_FILE	LDY	#D_FILENAME
 		MVA	#$E5 (CURR_DIR_ENTRY),Y			; $E5 first char. is a deleted file
 		LDY	#D_START_CLSTH
 		MWA	#$00 (CURR_DIR_ENTRY),Y			; delete high word of file-size
@@ -928,7 +941,7 @@ SH_DEL          JSR     SAVE_ACT_DIR        			; save actual directory LBA
 		JSR     OS_NEXT_FREE_CLUSTER			; Get first free cluster in FREE_CLUSTER
 
 		; Update SIS with #clusters freed and first-free cluster nr
-		JSR	WRITE_SIS				; Update SIS and write back
+		JSR	SIS_ADD					; Update SIS and write back
 SH_DEL_X        JMP     LOAD_ACT_DIR        			; error - restore actual directory LBA and return
 
 SH_DEL_ERR	JMP	SH_FILE_ERR				; Print 'File not found' and return
@@ -1084,6 +1097,12 @@ SAVE_NAME       MVA	FILENAME,X   NAME_SAVE,X	; NAME_SAVE = FILENAME
                 SEC
 SH_SYS_DIR_END  RTS
 
+; **** Print version info  *****************************************************
+; Output: -
+; ******************************************************************************
+SH_VER		PRSTR	MSG_BOOT			; Print Title Info
+		RTS
+		
 ; **** Monitor call-back Routine ************************************************
 SH_MONITOR      PRSTR   MSG_MONITOR
                 JMP     MON_WARM_START
@@ -1152,21 +1171,39 @@ SYS_INFO_LBA	.dword	$00000000
 FREE_KB		.dword	$00000000
 TXT_FFREE_CLST	.by	'First free cluster:$' $00
 TXT_KB		.by	' KB free' CR $00
+SIS_CNT		.byte	$00				; SIS counter, counts #clusters freed or allocated
 
 ; Write Info back to System Information Sector **************************************
-WRITE_SIS	ADB	SIS_BUFF+$01E8 SCNT		; add SCNT to #free clusters in SIS-buffer
+SIS_ADD		PRSTR	SISP
+		ADB	SIS_BUFF+$01E8 SIS_CNT		; add SIS_CNT to #free clusters in SIS-buffer
 		SCC					; 'skip if C is clear' macro
 		INC	SIS_BUFF+$01E9
 		SCC	
 		INC	SIS_BUFF+$01EA
 		SCC	
 		INC	SIS_BUFF+$01EB
+SIS_WRITE	LDA	SIS_CNT				; Print SIS_CNT
+		JSR	HEXOUT
+		JSR	CROUT
 		MVAX	4 FREE_CLUSTER SIS_BUFF+$01EC	; SIS First free cluster = FREE_CLUSTER
 		JSR	INIT_SIS_BUF			; Init SIS Buffer for CMD_WRITE command
 		LDXYI	SYS_INFO_LBA 			; Sys. Info. Sector LBA
 		JSR 	DEV_WR_LBLK           		; Write SIS to disk
 		JMP	FREE_KB_UPDATE			; Update FREE_KB and return
 
+SIS_DEL		PRSTR	SISM
+		SBB	SIS_BUFF+$01E8 SIS_CNT		; subtract SIS_CNT from #free clusters in SIS-buffer
+		SCS					; 'skip if C is set' macro
+		DEC	SIS_BUFF+$01E9
+		SCS
+		DEC	SIS_BUFF+$01EA
+		SCS
+		DEC	SIS_BUFF+$01EB
+		JMP	SIS_WRITE			; write back to disk
+		
+SISP		.by	'SIS+' $00
+SISM		.by	'SIS-' $00
+		
 ; **** Data Area ***************************************************************
 ; ******************************************************************************
 
@@ -1206,7 +1243,8 @@ CHARS		dta	'B' , a(CMD_BASIC)		; byte, word
 		dta	'I' , a(CMD_IF)		
 		dta	'M' , a(CMD_MKDIR)		
 		dta	'P' , a(CMD_PAUSE)		
-		dta	'R' , a(CMD_REM)		
+		dta	'R' , a(CMD_REM)
+		dta	'V' , a(CMD_VER)
 		.byte 	$00
 
 CMD_BASIC	dta	5, c'ASIC', a(SH_BASIC)		; byte, string, word, EOT
@@ -1223,3 +1261,4 @@ CMD_MKDIR	dta	5, c'KDIR', a(SH_MKDIR)		;
 CMD_MON		dta	3, c'ON'  , a(SH_MONITOR), $00	; 
 CMD_PAUSE	dta	5, c'AUSE', a(SH_PAUSE)  , $00	; 
 CMD_REM		dta	3, c'EM'  , a(SH_REM)    , $00	; 
+CMD_VER		dta	3, c'ER'  , a(SH_VER)    , $00  ;

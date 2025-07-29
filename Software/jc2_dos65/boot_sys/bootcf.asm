@@ -1,14 +1,14 @@
 ; ******************************************************************************
-; The Micro (Disk) Operating System for 6502 Microprocessors
+; The Disk Operating System for 6502 Microprocessors
 ;
-; M/OS-65 System I, Version 0.2.5 by Emile, original design (V0.2.0) by Joerg Walke
+; JC2 DOS65, Version 0.2.6 by Emile, original design (V0.2.0) by Joerg Walke
 ;
 ; Developed for the Junior Computer ][
 ;
 ; First implementation 6.7.2023, updated 20.06.2024, by Joerg Walke
 ; Assembled with A65, Converted to MADS by Emile
 ;
-; M/OS-65 is primarily a small Disk Operation System (DOS) based on the FAT
+; DOS65 is primarily a small Disk Operation System (DOS) based on the FAT
 ; filesystem. This version is for the CF-IDE interface with FAT32 only.
 ; A CF-Card can be partitioned with up to four primary partitions.
 ; Using the MKBOOTCF program you can write the needed Partition Boot Block and
@@ -21,7 +21,7 @@
 
 VERMAIN   	EQU     '0'    		; main version
 VERPSUB    	EQU     '2'    		; primary sub version
-VERSSUB		EQU	'5'		; secondary sub version
+VERSSUB		EQU	'6'		; secondary sub version
 
 ; List Of Changes **************************************************************
 ; V0.2.1: 11-04-25 Emile boot.asm renamed in bootcf.asm and adapted for CF-IDE interface.
@@ -33,6 +33,10 @@ VERSSUB		EQU	'5'		; secondary sub version
 ;	  - Bug-fix MKDIR run after DIR command
 ;	  - SIS added + total KB printed with DIR command
 ; V0.2.5: - DEL command added.
+; V0.2.6: - SAVE from BASIC added, CFC_SAVE, OS_CREATE, OS_CREATE_FILE changed,
+;           OS_SAVE_FILE and LINK_FAT_ENTRY added.
+;         - VER command added.
+;         - Bug-fixes OS_LOAD_FILE when 1) #clusters = 1 2) sectors/cluster = 1
 ; ******************************************************************************
 		OPT h- ; do not add file header
 		OPT f+ ; save as single block

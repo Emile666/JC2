@@ -65,6 +65,7 @@ CURR_DIR_BLK    EQU     $1824       	; (32 bit) - current directory LBA
 
 MON_WARM_START  EQU     $E003
 
+SWITCH_TO_ROM	EQU	$E00A			; Switch Basic to ROM Page ($B000-$DFFF)
 COUT            EQU     $E052
 CROUT           EQU     $E05A
 SPCOUT          EQU     $E05E
@@ -81,7 +82,8 @@ OPEN_DEVICE     EQU     $E1AA
 READTIME        EQU     $E2DE			; BIOS v1.2.1
 READDATE        EQU     $E2E2			; BIOS v1.2.1
 OS_STRING_OUT	EQU	$F682			; SPRINT in BIOS v1.2.1, but same routine
-SWITCH_TO_ROM	EQU	$E00A			; Switch Basic to ROM Page ($B000-$DFFF)
+MON2ROM		EQU	$FD7D			; Monitor to ROM
+MON2RAM		EQU	$FD86			; Monitor to RAM, enable RAM behind it
 
 ; Tables and Buffers ***********************************************************
 DIR_BLK_BUF     EQU     $0200           	; Directory Block Buffer

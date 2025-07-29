@@ -95,7 +95,7 @@ OS_FIRST_DIR_BLK
 
 SET_DIR_CLUSTER MVAX	4 D_ACTUAL_DIR CURR_CLUSTER	; CURR_CLUSTER = D_ACTUAL_DIR, FAT32 and FAT16/FAT12 subdir
 CONVERT_CLUSTER JSR     CLUSTER_TO_BLK       		; convert CURR_CLUSTER to LBA number in NUM32
-                LDXYI   CURR_DIR_BLK
+                LDXYI   CURR_DIR_BLK			; LBA of current directory
                 JSR     STORE_32             		; and save result as current directory block
                 LDX     D_SECT_PER_CLST      		; load number of blocks per clusters
 SET_NUM_BLOCKS  STX     CURR_BLK_NUM	     		; CURR_BLK_NUM = D_SECT_PER_CLST
@@ -131,13 +131,20 @@ OS_NEXT_DIR_CLSTR
 ; Write directory in DIR_BLK_BUF to disk with LBA nr in X,Y.
 ; Input: X,Y = Pointer to LBA nr.
 ; ******************************************************************************
-OS_SAVE_DIR     STX	SAVEX
+OS_SAVE_DIR     STX	SAVEX			; TODO: remove SAVEX, SAVEY ?
 		STY	SAVEY
 		MWA	#DIR_BLK_BUF BLKBUF	; set source block buffer to DIR_BLK_BUF
                 LDX     SAVEX       		; pointer to block number (LBA) to be saved
                 LDY     SAVEY
                 JMP     DEV_WR_LBLK          	; write directory block in DIR_BLK_BUF to LBA in NUM32 and return
                 
+; **** Save FAT Block **********************************************************
+; Write FAT table in BLOCK_BUFF ($0600) to disk with LBA nr in X,Y.
+; Input: X,Y = Pointer to LBA nr.
+; ******************************************************************************
+OS_SAVE_FAT     LDXYI	CURR_FAT_BLK		; LBA nr of FAT
+                JMP     DEV_WR_LBLK_BUF        	; write FAT buffer and return
+
 ; **** Create New File on Disk *************************************************
 ; Input: FILENAME = String8_3
 ;        A        = File Attributes
@@ -188,8 +195,15 @@ GET_DATE_TIME   JSR     OS_FILEDATE         	; get current date as file date
 		MVA	FREE_CLUSTER+1  (CURR_DIR_ENTRY),Y-	; store in MSB of 1st_cluster_low
 		MVA	FREE_CLUSTER    (CURR_DIR_ENTRY),Y	; store in LSB of 1st_cluster_low
 		
-		LDXYI	CURR_DIR_BLK		; Write new subdir entry in current dir (CURR_DIR_BLK is LBA of current dir block)
-                JMP     OS_SAVE_DIR	    	; write this dir entry back to disk and return
+		LDA     F_ATTRIBS				; Get file/dir attributes again
+		AND.NE  #FA_DIRECTORY OS_CR_SAV			; create a dir? Branch if it is a dir
+
+                LDY     #D_FILE_SIZE      			; index to file size in dir. entry
+		MWA	SAVE_LEN (CURR_DIR_ENTRY),Y+		; Save file-length in current dir. entry
+		MWA	#0 (CURR_DIR_ENTRY),Y			; Set high-word of file-size to 0
+		
+OS_CR_SAV	LDXYI	CURR_DIR_BLK				; Write new subdir entry in current dir (CURR_DIR_BLK is LBA of current dir block)
+                JMP     OS_SAVE_DIR	    			; write this dir entry back to disk and return
                 
 ; **** Get Current Time As File Time *******************************************
 ; Output: File Time = Word[X,Y]
@@ -349,9 +363,9 @@ LOAD_COM1       PLA
 		JSR	INIT_FILE_BUFF			; Set BLKBUF pointer to FILE_BUFF
                 LDXYI   NUM32		    		; NUM32 contains LBA of cluster to read
                 JSR     DEV_RD_LBLK         		; Read first block of file into FILE_BUFF
-		DEC     SCNT                		; First block is already read in
-		DEC	BCNT				; Number of blocks to read
 		JSR	COPY_BLK0_DEST			; Copy first block to destination
+		DEC.EQ	BCNT OS_EXEC_CHK		; Branch if #blocks to read is 1
+		DEC.EQ  SCNT NEXT_CLUSTER0     		; Branch if sectors/cluster is 1
 		
                 JSR     LOAD_NEXT_BLKS	    		; Load next blocks of file and execute it
                 LDA     #HDD1_ID   	    		; Replace by D_DEV_ID?
@@ -391,6 +405,77 @@ OS_EXEC_CHK	LDA.NE	FTYPE OS_EXECUTE		; 0 = .BAS, 1=.COM, 2=.EXE, branch if an ex
 OS_EXECUTE      JMP     (OS_PROG)           		; run .com or .exe file
 OS_PROG         .word      $0000
                 
+; **** Save the contents of a file to disk *************************************
+; OS_CREATE/OS_CREATE_FILE has already created an entry in the current directory
+; and allocated the first free cluster (in CURR_CLUSTER) to the file. If the file
+; existed, it was deleted first, so you always have a new first cluster number. 
+; This routine writes all sectors of this file and updates (=links clusters 
+; together) the FAT table. 
+; Input: FREE_CLUSTER: first cluster nr of file to save
+; ******************************************************************************
+OS_SAVE_FILE	LDXYI   FREE_CLUSTER      		; free cluster nr, first cluster of created file
+                JSR     CLSTR_TO_BLK        		; convert cluster number to LBA number in NUM32
+		MWA	#$1FFE FSAVE_PTR		; Init. BLKBUF to start of .BAS file to save
+		JSR	MON2RAM				; Enable RAM behind Monitor ROM ($1C00-$1FFF)
+		MWA	#$2000 $1FFE			; Set first word of Basic file to start-address
+                MVA     SAVE_SECS BCNT      		; init. block counter, SAVE_SECS was calculated by CFC_SAVE
+                MVA     D_SECT_PER_CLST SCNT   		; SCNT = numbers of sectors per cluster
+		MVA	#1 SIS_CNT			; #clusters allocated
+
+; Write sectors/cluster until --BCNT = 0
+SAVE_NXT_BLK	MWA	FSAVE_PTR BLKBUF		; BLKBUF = FSAVE_PTR
+		LDXYI	NUM32				; LBA number
+		JSR	DEV_WR_LBLK			; Write another sector to disk
+	:2	INC	FSAVE_PTR+1			; BLKBUF += $0200, points to next block in memory to save
+                DEC.EQ  BCNT OS_SAVE_X      		; branch if no more blocks to write
+		DEC.EQ  SCNT SAVE_NXT_CLSTR    		; branch if more blocks in cluster to write
+		JSR     INC_32				; Increment LBA block address in NUM32
+		JMP	SAVE_NXT_BLK			; branch always
+		
+; next cluster needs to be allocated considering the volume FAT type **************
+SAVE_NXT_CLSTR	MVAX	4 FREE_CLUSTER PREV_CLUSTER	; PREV_CLUSTER = FREE_CLUSTER
+		JSR     OS_ADD_CLUSTER	   		; Find next free cluster in FAT and allocates it (does NOT write FAT back to disk)
+		JSR	LINK_FAT_ENTRY			; Link new FREE_CLUSTER to PREV_CLUSTER (does NOT write FAT back to disk)
+		JSR	OS_SAVE_FAT			; Write updated FAT buffer back to disk
+		INC	SIS_CNT				; #clusters allocated += 1
+		LDXYI   FREE_CLUSTER      		; free cluster nr, first cluster of created file
+                JSR     CLSTR_TO_BLK	    		; convert FREE_CLUSTER to LBA number in NUM32.
+                MVA     D_SECT_PER_CLST SCNT   		; SCNT = numbers of sectors per cluster
+                BNE     SAVE_NXT_BLK	    		; branch always
+
+OS_SAVE_X	JMP	MON2ROM				; Switch back to Monitor ROM and return
+
+PREV_CLUSTER	.dword 	$00000000			; Previous cluster nr of file
+TXT_LINK	.by	'Link_FAT_Entry: ' $00
+TXT_LINK2	.by	' to ' $00
+FSAVE_PTR	.word	$0000				; File-save Pointer
+
+; ******************************************************************************
+; Links a new cluster (FREE_CLUSTER) to the current cluster (PREV_CLUSTER) of a file.
+; It also updates (writes) the FAT table.
+; ******************************************************************************
+LINK_FAT_ENTRY	PRSTR	TXT_LINK
+		PRHEX32	PREV_CLUSTER
+		PRSTR	TXT_LINK2
+		PRHEX32	FREE_CLUSTER
+		JSR	CROUT				; Print CR
+		LDA	PREV_CLUSTER			; get LSB of PREV_CLUSTER
+	:2	ASL					; SHL2, DWORD index in FAT page
+		TAY					; Y = DWORD byte 0 in FAT page
+		LDA	PREV_CLUSTER+1
+		LSR					; check bit 0 of PREV_CLUSTER[1]
+		BCS	LINK_UPPER_PAGE			; if bit 0 = 1 then write byte to upper half of block
+		
+		; lower half block of Buffer
+		MWA	FREE_CLUSTER   BLOCK_BUFF,Y	; Write CURR_CLUSTER nr into PREV_CLUSTER FAT entry
+		MWA	FREE_CLUSTER+2 BLOCK_BUFF+2,Y
+		RTS					; return
+		
+		; upper half block of Buffer
+LINK_UPPER_PAGE	MWA	FREE_CLUSTER   BLOCK_BUFF+256,Y
+		MWA	FREE_CLUSTER+2 BLOCK_BUFF+258,Y
+		RTS					; return
+
 ; ******************************************************************************
 INIT_FREE_CLUSTER
 		MWA	#$02 FREE_CLUSTER		; first data cluster is $000002
@@ -400,7 +485,7 @@ INIT_FREE_CLUSTER
                 
 ; ******************************************************************************
 ; Input: FREE_CLUSTER: number of possible free cluster
-; Output: C=1: cluster is free ; C=0: 
+; Output: C=1: CURR_CLUSTER is free ; C=0: 
 ; ******************************************************************************
 OS_NEXT_FREE_CLUSTER
                 MVAX	4 FREE_CLUSTER CURR_CLUSTER	; CURR_CLUSTER = FREE_CLUSTER
@@ -430,12 +515,13 @@ CHK_MAX_FAT2    LDA     CURR_FAT_BLK,X	    			; LBA of current FAT block
 ; This routine sets a DWORD in the FAT sector from free to allocated, it is 
 ; called from OS_ADD_CLUSTER. The correct FAT page has already been loaded into 
 ; BLOCK_BUFF ($600) by OS_NEXT_FREE_CLUSTER -> GET_NEXT_CLUSTER. So the cluster nr
-; in CURR_CLUSTER needs to be allocated in the FAT table.
+; in FREE_CLUSTER needs to be allocated in the FAT table.
 ; ******************************************************************************
-WRITE_FAT_ENTRY	PRCH	'['			; Print [
-		PRHEX16	CURR_CLUSTER		; Print CURR_CLUSTER
+UPDATE_FAT_TABLE
+		PRCH	'['			; Print [
+		PRHEX16	FREE_CLUSTER		; Print FREE_CLUSTER
 		PRCH	']'
-		LDA	CURR_CLUSTER		; get LSB of cluster nr
+		LDA	FREE_CLUSTER		; get LSB of cluster nr
 	:2	ASL				; SHL2, DWORD index in FAT page
 		TAY				; Y = DWORD byte 0 in FAT page
 	.rept 3					; Write 3 x $FF into FAT entry
@@ -444,9 +530,7 @@ WRITE_FAT_ENTRY	PRCH	'['			; Print [
 		INY				; Next byte in DWORD
 	.endr	
 		LDA	#$0F			; write end marker
-		JSR	WRITE_ENTRY_BYTE	; Write 4th byte ($0F) and return
-		LDXYI	CURR_FAT_BLK		; LBA of current FAT block
-		JMP	DEV_WR_LBLK_BUF		; write FAT block back to disk and return
+		JMP	WRITE_ENTRY_BYTE	; Write 4th byte ($0F) and return
 		
 ; **** Write a Single FAT Entry Byte To Block Buffer ***************************
 ; INPUT : A = Write Data
@@ -454,7 +538,7 @@ WRITE_FAT_ENTRY	PRCH	'['			; Print [
 ; ******************************************************************************
 WRITE_ENTRY_BYTE
 		TAX
-                LDA     CURR_CLUSTER+1
+                LDA     FREE_CLUSTER+1
                 LSR				; check bit 0 of free_cluster[1]
                 TXA
                 BCS     WR_UPPER_PAGE       	; if bit 0 = 1 then write byte to upper half of block
@@ -561,12 +645,13 @@ ANDIR_LP1	STA.NE	(BLKBUF),Y+ ANDIR_LP1	; Clear dir block buffer (512 bytes) and 
 TXT_CURR_CLST3	.by	'ADD_NEW_DIR_CLST, Free=$' $00
 
 ; **** Add First Cluster To Empty File *****************************************
+; Note: does NOT write FAT table back to disk, only FAT table in memory is updated.
 ; ******************************************************************************
 OS_ADD_CLUSTER  JSR	INIT_FREE_CLUSTER	; FREE_CLUSTER = 2L
 		JSR     OS_NEXT_FREE_CLUSTER	; Get free cluster in FREE_CLUSTER
                 BCC     ADD_CLUSTER_END     	; no free cluster found
 		
-                JSR     WRITE_FAT_ENTRY	    	; Allocate CURR_CLUSTER, also writes FAT block back to disk
+                JSR     UPDATE_FAT_TABLE	; Allocate FREE_CLUSTER, does NOT write FAT block back to disk
 ADD_CLUSTER_END RTS
 
 ; **** Create New File *********************************************************
@@ -574,52 +659,49 @@ ADD_CLUSTER_END RTS
 ; Output: C = 0 - Error; C = 1 - No Error
 ;         A = $FF - File/Directory already exists; A <> $FF Write Error Codes
 ; ******************************************************************************
-OS_CREATE       STA     F_ATTRIBS           	; save attributes
-                AND.EQ  #FA_DIRECTORY ADD_FILE 	; create a directory? Branch if not (add a file)
-                JSR     OS_DIR_EXISTS       	; C=1: dirname already exists
-		BCC	OS_CREATE_CONT		; branch if dirname does not exist yet
-		BCS	OS_CREATE_ERR		; branch on error
-
-ADD_FILE        JSR     OS_FILE_EXISTS      	; check if file already exists
-OS_CREATE_CONT	
-		LDA     #$FF                	; error result -1 if file/dir exists
-                BCS     OS_CREATE_ERR       	; file already exists, exit with error $FF
-
-		JSR	OS_ADD_CLUSTER		; Return free cluster in CURR_CLUSTER and write FAT
+OS_CREATE       STA     F_ATTRIBS           		; save attributes
+                AND.EQ  #FA_DIRECTORY ADD_FILE 		; create a directory? Branch if not (add a file)
 		
+		; Find directory
+                JSR     OS_DIR_EXISTS       		; C=1: dirname already exists
+		BCC	OS_CREATE_CONT			; branch if dirname does not exist yet
+		BCS	OS_CREATE_ERR			; branch on error
+
+		; Find file
+ADD_FILE        JSR     OS_FILE_EXISTS      		; check if file already exists
+		BCC	OS_CREATE_CONT			; branch if file does not exist
+		
+		; delete file (SH_DEL)	
+		PRSTR	TXT_OVERWRITE			; Print 'File exists, overwrite (y/n)?'
+		JSR 	CIN           			; get character
+		AND 	#$DF            		; uppercase chars only
+		CMP.NE 	#'Y' OS_CREATE_ERR    		; if not Y then exit with error
+		PRSTR	TXT_SH_DEL			; DEBUG
+		JSR	SH_DEL_FILE			; Delete file and update FAT table
+
+OS_CREATE_CONT	JSR	OS_ADD_CLUSTER			; Return free cluster in FREE_CLUSTER (does NOT write FAT back to disk)
+		JSR	OS_SAVE_FAT			; Write updated FAT buffer back to disk
 		; Find a Free dir. entry and fill it with file info and save it to disk
-		JSR 	OS_FIND_FREE		; Find a free directory entry in the current directory
+		JSR 	OS_FIND_FREE			; Find a free directory entry in the current directory
 .if	DBG_PRINT = 1
-		PRSTR	TXT_FFREE1		; DEBUG
+		PRSTR	TXT_FFREE1			; DEBUG
 		PRHEX16	CURR_DIR_ENTRY
-		JSR	CROUT			; Print CR
+		JSR	CROUT				; Print CR
 .endif
-                LDA     F_ATTRIBS		; Get file/dir attributes
-		JSR	OS_CREATE_FILE		; create the file/dir on disk
+                LDA     F_ATTRIBS			; Get file/dir attributes
+		JSR	OS_CREATE_FILE			; create the file/dir on disk
+		LDA     F_ATTRIBS			; Get file/dir attributes again
+		AND.EQ  #FA_DIRECTORY OS_CREATE_X	; create a file? Branch if it is a file
 		
-		JSR	ADD_NEW_DIR_CLST	; Add new dir cluster with . and .. and save it to disk
-		SEC				; C=1, OK
-                RTS
-OS_CREATE_ERR   CLC				; C=0, error
-OS_CREATE_END   RTS				; return
+		JSR	ADD_NEW_DIR_CLST		; Add new dir cluster with . and .. and save it to disk
+OS_CREATE_X	SEC					; C=1, OK
+                RTS					; and return
+OS_CREATE_ERR   CLC					; C=0, error
+OS_CREATE_END   RTS					; return
                 
+TXT_OVERWRITE	.by	'File exists, overwrite (y/n)?' $00
 TXT_FFREE1	.by	'Free Dir Entry $' $00
-
-; **** Open File ***************************************************************
-; ******************************************************************************
-OS_OPEN         RTS
-
-; **** Close File **************************************************************
-; ******************************************************************************
-OS_CLOSE        RTS
-
-; **** Set File Size ***********************************************************
-; ******************************************************************************
-OS_SET_SIZE     RTS
-
-; **** Delete File *************************************************************
-; ******************************************************************************
-OS_DELETE       RTS
+TXT_SH_DEL	.by	'SH_DEL' CR $00
 
 ; **** Test If File Is Empty ************** ************************************
 ; Input:  Ptr(CURR_DIR_ENTRY)
@@ -735,16 +817,13 @@ OS_SET_DRIVE    CMP.EQ  CURR_DRIVE SET_DRIVE_END	; Branch (just exit) if actual 
 
 		MVAY    $20 (STOL) CURR_VOLUME	; load device descriptor into CURR_VOLUME
                 STX     CURR_DRIVE          	; store actual drive as current drive
-
-; TODO: Invalidate Block Buffers ###########################################################################
-
-                LDA     D_DEV_ID            ; get current device id
-                JSR     OPEN_DEVICE         ; and open the device driver
-SET_DRIVE_END   SEC			    ; C=1: no error
+                LDA     D_DEV_ID            	; get current device id
+                JSR     OPEN_DEVICE         	; and open the device driver
+SET_DRIVE_END   SEC			    	; C=1: no error
                 RTS
 
 SET_DRIVE_ERR   LDXYI   MSG_DRIVE_ERR	
-                JMP     OS_PRINT_ERR	    ; Print 'Drive not found'
+                JMP     OS_PRINT_ERR	    	; Print 'Drive not found'
 
 ; **** Test If Root Directory **************************************************
 ; Input:
@@ -1022,8 +1101,8 @@ NOT_EMPTY     	CLC                         		; C=0, dir. entry is not empty
 CMD_ADDR        .word      $0000
                 
 ; String Data Area *************************************************************
-MSG_BOOT        .by    CR ' Welcome to DOS-65 System II, Version '
-                .byte  VERMAIN,DOT,VERPSUB,DOT,VERSSUB,CR,CR
+MSG_BOOT        .by    CR ' Welcome to JC2 DOS65, V'
+                .byte  VERMAIN,DOT,VERPSUB,DOT,VERSSUB,CR
                 .by    ' 2025 by Emile, original design by Joerg Walke' CR CR $00
 MSG_SIZE_ERR    .by    'Out of memory' CR $00
 FILENAME        .ds 	12
