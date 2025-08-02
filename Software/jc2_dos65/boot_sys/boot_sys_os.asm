@@ -1101,8 +1101,9 @@ NOT_EMPTY     	CLC                         		; C=0, dir. entry is not empty
 CMD_ADDR        .word      $0000
                 
 ; String Data Area *************************************************************
-MSG_BOOT        .by    CR ' Welcome to JC2 DOS65, V'
-                .byte  VERMAIN,DOT,VERPSUB,DOT,VERSSUB,CR
-                .by    ' 2025 by Emile, original design by Joerg Walke' CR CR $00
+MSG_BOOT        .by    CR ' Welcome to DOS65 for the JC2, V'
+                .byte  VERMAIN,DOT,VERPSUB,DOT,VERSSUB
+                .by    ', 2025 by Emile' CR
+		.by    ' Original design by Joerg Walke' CR CR $00
 MSG_SIZE_ERR    .by    'Out of memory' CR $00
 FILENAME        .ds 	12

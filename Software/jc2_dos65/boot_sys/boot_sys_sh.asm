@@ -814,8 +814,8 @@ SUBDIR_LP1	LDA	D_SUBDIR_NAME,Y		; get char from D_SUBDIR_NAME
 		CMP.EQ	#BSLASH BSLASH_FND	; branch if filename separator found
 		DEY.NE	SUBDIR_LP1		; branch always
 
-BSLASH_FND	CPY.EQ	#0 DSNM_X		; branch if root-dir
-		MVA	#0 D_SUBDIR_NAME,Y	; replace '\' with '\0' in D_SUBDIR_NAME
+BSLASH_FND	INY				; Y = 0 (should be a '\') or at '\', now goto next char
+		MVA	#0 D_SUBDIR_NAME,Y	; add '\0' next to '\' in D_SUBDIR_NAME
 DSNM_X		RTS				; and return
 
 ; **** Change Directory Command ************************************************
@@ -1067,12 +1067,6 @@ CMP_EXT_EXE     LDA     EXT_EXE,Y           	; check if .EXE file
 SH_RUN_FF       JSR     OS_FIND_FILE        	; check if file with this extension exists
                 BCS     SH_RUN3             	; yes, load file
 
-                JSR     SH_SET_SYS_DIR      	; no, search in system directory
-                BCC     SH_RUN_ERR          	; system directory does not exist
-
-SH_RUN2         JSR     OS_FIND_FILE	    	; find file with this extension in root-dir
-                BCS     SH_RUN3		    	; branch if found
-
 SH_RUN_ERR      JSR     CROUT		    	; print CR
                 JSR     SH_FILE_ERR         	; file does not exist
                 BCC     SH_RUN_END	    	; branch always
@@ -1080,23 +1074,6 @@ SH_RUN_ERR      JSR     CROUT		    	; print CR
 SH_RUN3         JSR     OS_LOAD_FILE	    	; Load .bas file or load/run .com/.exe file
 SH_RUN_END      JMP     LOAD_ACT_DIR        	; restore actual directory LBA and return
                 
-; **** Set System Directory ****************************************************
-; Output: C = 0 - Error
-; ******************************************************************************
-SH_SET_SYS_DIR  LDX     #10
-SAVE_NAME       MVA	FILENAME,X   NAME_SAVE,X	; NAME_SAVE = FILENAME
-		MVA	SYSTEM_DIR,X FILENAME,X-	; FILENAME = SYSTEM_DIR
-                BPL     SAVE_NAME			; branch if not done
-
-                JSR     OS_SET_ROOT_DIR
-		LDXYI	CB_FIND_SUBDIR
-                JSR     OS_FIND             		; find subdirectory
-                BCC     SH_SYS_DIR_END
-
-                MVAX	11 NAME_SAVE FILENAME		; FILENAME = NAME_SAVE
-                SEC
-SH_SYS_DIR_END  RTS
-
 ; **** Print version info  *****************************************************
 ; Output: -
 ; ******************************************************************************
