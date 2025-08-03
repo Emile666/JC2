@@ -789,34 +789,32 @@ FIND_EOS	LDA.EQ	D_SUBDIR_NAME,Y SUBDIR_EOS	; get char of subdir name, branch if 
 		BNE	FIND_EOS			; branch always
 		RTS
 
-SUBDIR_EOS	CPY.EQ	#1 CP_INIT		; branch if root-dir
-		MVA	#BSLASH D_SUBDIR_NAME,Y	; add '\' to subdir name
+SUBDIR_EOS	CPY.EQ	#1 CP_INIT			; branch if root-dir
+		MVA	#BSLASH D_SUBDIR_NAME,Y		; add '\' to subdir name
 		INY
 CP_INIT		LDX	#0
 CP_FNAME	MVA	FILENAME,X D_SUBDIR_NAME,Y
-		BEQ	SUBDIR_X		; exit if $00 found
+		BEQ	SUBDIR_X			; exit if $00 found
 		
-		INY				; index in D_SUBDIR_NAME
-		INX				; index in FILENAME
-		CPX.NE	#D_ATTRIBUTES CP_FNAME	; branch if not at max filename yet
-SUBDIR_X	RTS				; return if done
+		INY					; index in D_SUBDIR_NAME
+		INX					; index in FILENAME
+		CPX.NE	#D_ATTRIBUTES CP_FNAME		; branch if not at max filename yet
+SUBDIR_X	RTS					; return if done
 		
 ; **** Del subdir name from D_SUBDIR_NAME **************************************
 ; ******************************************************************************
 DEL_SUBDIR_NAME	LDY	#0
-FIND_EOS2	LDA.EQ	D_SUBDIR_NAME,Y SUBDIR_EOS2	; get char of subdir name, branch if end-of-string
+FIND_EOS2	LDA.EQ	D_SUBDIR_NAME,Y SUBDIR_LP1	; get char of subdir name, branch if end-of-string
 		INY
 		BNE	FIND_EOS2			; branch always
 DEL_SUBDIR_X	RTS
 
-SUBDIR_EOS2	DEY				; goto last char before $00
-SUBDIR_LP1	LDA	D_SUBDIR_NAME,Y		; get char from D_SUBDIR_NAME
-		CMP.EQ	#BSLASH BSLASH_FND	; branch if filename separator found
-		DEY.NE	SUBDIR_LP1		; branch always
-
-BSLASH_FND	INY				; Y = 0 (should be a '\') or at '\', now goto next char
-		MVA	#0 D_SUBDIR_NAME,Y	; add '\0' next to '\' in D_SUBDIR_NAME
-DSNM_X		RTS				; and return
+SUBDIR_LP1	LDA	D_SUBDIR_NAME,Y			; get char from D_SUBDIR_NAME
+		CMP.EQ	#BSLASH BSLASH_FND		; branch if filename separator found
+		DEY.NE	SUBDIR_LP1			; branch always
+		INY					; Y = 0->1, leave '\' for root-dir
+BSLASH_FND	MVA	#0 D_SUBDIR_NAME,Y		; Replace '\' with \0 for subdirs in D_SUBDIR_NAME
+DSNM_X		RTS					; and return
 
 ; **** Change Directory Command ************************************************
 ;
@@ -1003,11 +1001,39 @@ SH_REM_X	RTS
 ; Executes Basic in ROM. Return with 'DOS' command. 
 ; ******************************************************************************
 SH_BASIC        JSR	SWITCH_TO_ROM		; Make sure BASIC ROM is enabled
+		JMP	BAS_JMP_CODE		; Run BAS_JMP_CODE from $1830 RAM area
+
+; ------------------------------------------------------------------------------
+; This routine copies the BAS_JMP code below to the RAM-area at $1820. This is
+; done during at OS MAIN, the OS Entry-point.
+; ------------------------------------------------------------------------------
+CP_BAS_JMP	LDX	#BAS_JMP_END - BAS_JMP	; Amount of bytes to copy
+SH_BAS_LP	LDA	BAS_JMP,X		; Get byte to copy
+		STA	BAS_JMP_CODE,X		; Store in $1830 RAM area
+		DEX
+		BPL	SH_BAS_LP		; Branch if not done yet
+		RTS				; return
+		
+;--------------------------------------------------------------------------------
+; This function gets copied to BAS_JMP_CODE in memory, so that a RAM-BANK switch
+; does not affect the boot.sys code (which is in page 0 of the RAM-BANK area).
+;--------------------------------------------------------------------------------
+BAS_JMP		LDX	#4			; RAM-BANK 4 is the 1st RAM-BANK
+		JSR	SET_RAMBANK		; Enable RAM-BANK for BASIC-programs
 		LDA	Wrmjph	    	    	; Is BASIC Warm-start vector already set?
 		CMP.NE	#$B1 SH_BCOLD 	    	; If not in this range, branch and do a BASIC cold start
 		
 		JMP	(Wrmjpl)	    	; Basic Warm-start
 SH_BCOLD	JMP	LAB_COLD	    	; Basic Cold-start
+
+;--------------------------------------------------------------------------------
+; The RAM-BANK MUST be switched to MAIN RAM-bank 0, because the DOS code is there.
+; If the switch back is not done, the return jump will crash.
+;--------------------------------------------------------------------------------
+DOS_JMP_RET	LDX	#0			; RAM-BANK 0 is the main RAM-BANK and used by DOS
+		JSR	SET_RAMBANK		; Enable main RAM-BANK for DOS
+		JMP	OS_SHELL_ENTRY		; Default return for Monitor and BASIC
+BAS_JMP_END
 
 ; **** BRUN Command ************************************************************
 ;

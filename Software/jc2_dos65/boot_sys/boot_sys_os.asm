@@ -39,7 +39,8 @@ OS_MAIN         PRSTR	MSG_BOOT			; Print boot-message
 ; Init CFC LOAD and SAVE VECTORS ***********************************************
 		MWA	#CFC_LOAD CF_LOAD_VEC		; macro CF_LOAD_VEC = CFC_LOAD, Used by BASIC with CMD_LOAD
 		MWA	#CFC_SAVE CF_SAVE_VEC		; macro CF_SAVE_VEC = CFC_SAVE, Used by BASIC with CMD_SAVE
-		MWA	#OS_SHELL_ENTRY RETURN_VECT	; Return-vector for Monitor and BASIC
+		JSR	CP_BAS_JMP			; Copy BASIC Jump program and return into $1830 RAM-area
+		MWA	#DOS_RET_CODE RETURN_VECT	; Return-vector for Monitor and BASIC
 		MWX	#0 Wrmjpl			; Reset BASIC warm-start vector, so that a reboot is also a BASIC cold-start
                 
 ; Clear Mount Table ************************************************************

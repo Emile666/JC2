@@ -61,6 +61,9 @@ CURR_CMD_PARAM  EQU     $181F      	; current command parameter
 FREE_CLUSTER    EQU     $1820           ; (32 bit) - last free cluster
 CURR_DIR_BLK    EQU     $1824       	; (32 bit) - current directory LBA
 
+BAS_JMP_CODE	EQU	$1830		; Code for Basic Warm/Cold start JMP ($20 bytes reserved)
+DOS_RET_CODE	EQU	BAS_JMP_CODE + DOS_JMP_RET - BAS_JMP	; Address for DOS return code
+
 ; External Routines ************************************************************
 
 MON_WARM_START  EQU     $E003
@@ -82,6 +85,7 @@ OPEN_DEVICE     EQU     $E1AA
 READTIME        EQU     $E2DE			; BIOS v1.2.1
 READDATE        EQU     $E2E2			; BIOS v1.2.1
 OS_STRING_OUT	EQU	$F682			; SPRINT in BIOS v1.2.1, but same routine
+SET_RAMBANK	EQU	$FD53			; BIOS v1.2.4
 MON2ROM		EQU	$FD7D			; Monitor to ROM
 MON2RAM		EQU	$FD86			; Monitor to RAM, enable RAM behind it
 
