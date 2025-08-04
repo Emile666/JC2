@@ -1,8 +1,6 @@
 ;-------------------------------------------------------------------------------
 ; This file contains the OS portion of the BOOT.SYS file.
-; 
 ; Assembler: MADS-Assembler
-; V0.1: 22-05-25, Emile first version
 ;-------------------------------------------------------------------------------
 
 ; ******************************************************************************
@@ -21,14 +19,20 @@ SHR_32          LSR32	NUM32			; SHR with C=0
                 
 ; **** Write Logical Block From Standard Buffer ********************************
 ; Input: [X,Y] points to 32-bit LBA
+; Note : Since this routine writes from Standard Buffer ($0600), it is not 
+;        necessary to create a RAM-BANK save version of it. 
+; It is called from OS_SAVE_FAT only.
+; ******************************************************************************
 DEV_WR_LBLK_BUF  LDA    #CMD_WRITE_BUF	  	; Call Device-driver Write routine
                  JMP    CMDDEV
 
 ; **** Write Logical Block *****************************************************
 ; Input: [X,Y] points to 32-bit destination LBA
 ;        BLKBUF,BLKBUFH = 16 Bit Source Address
-DEV_WR_LBLK      LDA     #CMD_WRITE		; Call Device-driver Write routine
-                 JMP     CMDDEV
+; NOTE: there's also a RAM-BANK save version of this routine in Monitor RAM.
+; ******************************************************************************
+DEV_WR_LBLK	LDA     #CMD_WRITE			; Call Device-driver Write routine
+                JMP     CMDDEV				
 
 ; ******************************************************************************
 ; *                               OS Entry Point                               *
@@ -37,11 +41,11 @@ OS_MAIN         PRSTR	MSG_BOOT			; Print boot-message
                 JSR     OS_SET_ROOT_DIR	     		; set D_ACTUAL_DIR and CURR_DIR_BLK to root-dir
                 
 ; Init CFC LOAD and SAVE VECTORS ***********************************************
-		MWA	#CFC_LOAD CF_LOAD_VEC		; macro CF_LOAD_VEC = CFC_LOAD, Used by BASIC with CMD_LOAD
-		MWA	#CFC_SAVE CF_SAVE_VEC		; macro CF_SAVE_VEC = CFC_SAVE, Used by BASIC with CMD_SAVE
-		JSR	CP_BAS_JMP			; Copy BASIC Jump program and return into $1830 RAM-area
-		MWA	#DOS_RET_CODE RETURN_VECT	; Return-vector for Monitor and BASIC
-		MWX	#0 Wrmjpl			; Reset BASIC warm-start vector, so that a reboot is also a BASIC cold-start
+		MWA	#MON_RAM_BLOCK.CFC_LOAD CF_LOAD_VEC	; CF_LOAD_VEC = CFC_LOAD, Used by BASIC with CMD_LOAD
+		MWA	#MON_RAM_BLOCK.CFC_SAVE CF_SAVE_VEC	; CF_SAVE_VEC = CFC_SAVE, Used by BASIC with CMD_SAVE
+		JSR	CP_MON_RAM				; Copy BASIC related DOS functions to Monitor RAM
+		MWA	#MON_RAM_BLOCK.DOS_JMP_RET RETURN_VECT	; Return-vector for Monitor and BASIC
+		MWX	#0 Wrmjpl				; Reset BASIC warm-start vector, so that a reboot is also a BASIC cold-start
                 
 ; Clear Mount Table ************************************************************
                 CLC
@@ -300,20 +304,17 @@ BASFILE		MWA	#BAS_LOAD_ADDR END_PTR	; destination = BAS_LOAD_ADDR, 1st 2 bytes c
 		MVA	#<FILE_BUFF+2 PSTR	; skip first 2 bytes of .BAS file (contains $00 $20)
 		
 ; **** Copy Second and other blocks of File to Memory **************************
-; Input:
+; Input: PSTR   : pointer to memory-source
+;        END_PTR: pointer to memory-destination
 ; ******************************************************************************
-COPY_BLK_DEST	PRCH	'['
+COPY_BLK_DEST	LDA	DBG_PRINT		; 1 = Debug print info
+		BEQ	CPBD_NO_DBG
+		PRCH	'['
 		PRHEX16	PSTR
 		PRCH	','
 		PRHEX16	END_PTR
 		PRCH	']'
-		LDY	#0
-CP_BLK0_LP	MVA	(PSTR),Y (END_PTR),Y		; Get byte from buffer and store in destination
-		INW	END_PTR				; Increment destination pointer (macro)
-		INW	PSTR				; Increment buffer pointer (macro)
-		LDA	PSTR+1				; MSB of buffer pointer
-		CMP.NE	#>FILE_BUFF+2 CP_BLK0_LP		; branch if not 2 pages (512 bytes) increased yet
-		RTS					; return
+CPBD_NO_DBG	JMP	MON_RAM_BLOCK.CP_BLK_DEST	; RAM-BANK save copy page (512 bytes)
 		
 FTYPE		.byte  	$00				; 0 = .BAS, 1=.COM, 2=.EXE
 
@@ -417,7 +418,6 @@ OS_PROG         .word      $0000
 OS_SAVE_FILE	LDXYI   FREE_CLUSTER      		; free cluster nr, first cluster of created file
                 JSR     CLSTR_TO_BLK        		; convert cluster number to LBA number in NUM32
 		MWA	#$1FFE FSAVE_PTR		; Init. BLKBUF to start of .BAS file to save
-		JSR	MON2RAM				; Enable RAM behind Monitor ROM ($1C00-$1FFF)
 		MWA	#$2000 $1FFE			; Set first word of Basic file to start-address
                 MVA     SAVE_SECS BCNT      		; init. block counter, SAVE_SECS was calculated by CFC_SAVE
                 MVA     D_SECT_PER_CLST SCNT   		; SCNT = numbers of sectors per cluster
@@ -426,7 +426,7 @@ OS_SAVE_FILE	LDXYI   FREE_CLUSTER      		; free cluster nr, first cluster of cre
 ; Write sectors/cluster until --BCNT = 0
 SAVE_NXT_BLK	MWA	FSAVE_PTR BLKBUF		; BLKBUF = FSAVE_PTR
 		LDXYI	NUM32				; LBA number
-		JSR	DEV_WR_LBLK			; Write another sector to disk
+		JSR	MON_RAM_BLOCK.DEV_WR_LBLK	; Write another sector to disk (RAM-BANK save write)
 	:2	INC	FSAVE_PTR+1			; BLKBUF += $0200, points to next block in memory to save
                 DEC.EQ  BCNT OS_SAVE_X      		; branch if no more blocks to write
 		DEC.EQ  SCNT SAVE_NXT_CLSTR    		; branch if more blocks in cluster to write
@@ -444,7 +444,7 @@ SAVE_NXT_CLSTR	MVAX	4 FREE_CLUSTER PREV_CLUSTER	; PREV_CLUSTER = FREE_CLUSTER
                 MVA     D_SECT_PER_CLST SCNT   		; SCNT = numbers of sectors per cluster
                 BNE     SAVE_NXT_BLK	    		; branch always
 
-OS_SAVE_X	JMP	MON2ROM				; Switch back to Monitor ROM and return
+OS_SAVE_X	RTS					; Return
 
 PREV_CLUSTER	.dword 	$00000000			; Previous cluster nr of file
 TXT_LINK	.by	'Link_FAT_Entry: ' $00
@@ -519,10 +519,12 @@ CHK_MAX_FAT2    LDA     CURR_FAT_BLK,X	    			; LBA of current FAT block
 ; in FREE_CLUSTER needs to be allocated in the FAT table.
 ; ******************************************************************************
 UPDATE_FAT_TABLE
+		LDA	DBG_PRINT		; 1 = Print debug info
+		BEQ	UPD_NO_DBG
 		PRCH	'['			; Print [
 		PRHEX16	FREE_CLUSTER		; Print FREE_CLUSTER
 		PRCH	']'
-		LDA	FREE_CLUSTER		; get LSB of cluster nr
+UPD_NO_DBG	LDA	FREE_CLUSTER		; get LSB of cluster nr
 	:2	ASL				; SHL2, DWORD index in FAT page
 		TAY				; Y = DWORD byte 0 in FAT page
 	.rept 3					; Write 3 x $FF into FAT entry
@@ -633,12 +635,13 @@ ANDIR_LP1	STA.NE	(BLKBUF),Y+ ANDIR_LP1	; Clear dir block buffer (512 bytes) and 
 		JSR	ADD_NEW_SUBDIR		; add subdir .. (parent dir)
 
 		; and write it to disk
-.if	DBG_PRINT = 1
+		LDA	DBG_PRINT		; 1 = Debug print info
+		BEQ	AND_NO_DBG
 		PRSTR	TXT_CURR_CLST3		; Print 'ADD_NEW_DIR, FREE=$'
 		PRHEX32	FREE_CLUSTER		; print FREE_CLUSTER in hex
 		JSR	CROUT			; Print CR
-.endif
-		LDXYI	FREE_CLUSTER		; Write new subdir in cluster with FREE_CLUSTER nr
+
+AND_NO_DBG	LDXYI	FREE_CLUSTER		; Write new subdir in cluster with FREE_CLUSTER nr
 		JSR	CLSTR_TO_BLK		; Convert FREE_CLUSTER nr to LBA nr in num32
 		LDXYI	NUM32			; LBA nr
 		JMP	OS_SAVE_DIR		; Save new subdir to disk and return
@@ -684,11 +687,13 @@ OS_CREATE_CONT	JSR	OS_ADD_CLUSTER			; Return free cluster in FREE_CLUSTER (does 
 		JSR	OS_SAVE_FAT			; Write updated FAT buffer back to disk
 		; Find a Free dir. entry and fill it with file info and save it to disk
 		JSR 	OS_FIND_FREE			; Find a free directory entry in the current directory
-.if	DBG_PRINT = 1
+
+		LDA	DBG_PRINT			; 1 = Debug print info
+		BEQ	OSCR_NO_DBG	
 		PRSTR	TXT_FFREE1			; DEBUG
 		PRHEX16	CURR_DIR_ENTRY
 		JSR	CROUT				; Print CR
-.endif
+OSCR_NO_DBG
                 LDA     F_ATTRIBS			; Get file/dir attributes
 		JSR	OS_CREATE_FILE			; create the file/dir on disk
 		LDA     F_ATTRIBS			; Get file/dir attributes again
@@ -702,7 +707,7 @@ OS_CREATE_END   RTS					; return
                 
 TXT_OVERWRITE	.by	'File exists, overwrite (y/n)?' $00
 TXT_FFREE1	.by	'Free Dir Entry $' $00
-TXT_SH_DEL	.by	'SH_DEL' CR $00
+TXT_SH_DEL	.by	'Deleting file...' CR $00
 
 ; **** Test If File Is Empty ************** ************************************
 ; Input:  Ptr(CURR_DIR_ENTRY)
@@ -856,12 +861,14 @@ OS_SET_RDIR_LP	MVA 	D_START_DIR,X D_ACTUAL_DIR,X	; D_ACTUAL_DIR = root dir clust
 ; A cluster number cannot be < 2. If a cluster number is 0, then it is 
 ; considered to be the root-dir and cluster number is set to 2.
 ; ******************************************************************************
-OS_SET_DIR      PRHEX16	CURR_DIR_ENTRY
+OS_SET_DIR      LDA	DBG_PRINT			; 1 Debug print info
+		BEQ	SD_NO_DBG			; branch if no debug print info
+		PRHEX16	CURR_DIR_ENTRY
 		PRCH	','
 		PRCLW	D_START_CLSTH CURR_DIR_ENTRY	; Print 1st cluster HIGH word
 		PRCLW	D_START_CLST  CURR_DIR_ENTRY	; Print 1st cluster LOW  word
 		PRCH	']'
-		LDY     #D_START_CLSTH+1		; MSB of 1st cluster HIGH word
+SD_NO_DBG	LDY     #D_START_CLSTH+1		; MSB of 1st cluster HIGH word
                 LDX     #$04				; Copy 4 bytes
 		STX	OS_DWORD0			; Flag for zero all 4 bytes 
 		DEX					; Copy bytes 3..0

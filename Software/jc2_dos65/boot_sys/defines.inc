@@ -1,7 +1,6 @@
 ;-------------------------------------------------
 ; Register Definitions for BOOT.SYS file.
 ; Assembler: MADS-Assembler
-; V0.1: 22-05-25, Emile first version
 ;-------------------------------------------------
 
 ; Global Constants and Variables ***********************************************
@@ -43,6 +42,8 @@ DIG2      	EQU   	$FA     	; 10^2 digit, used by NUMOUT and DEC2STR
 
 STRBUF	  	EQU   	$1400    	; input string buffer at $1400 (same as BIOS)
 
+MMU		EQU	$1700		; ATF1504 Memory Management Unit (MMU) Register
+
 CF_LOAD_VEC	EQU	$1806		; 2-byte vector for CF-card LOAD vector
 CF_SAVE_VEC	EQU	$1808		; 2-byte vector for CF-card SAVE vector
 RETURN_VECT     EQU     $180A           ; return vector to monitor caller in V1.2.1 (was $0001 in V1.2.0)
@@ -60,9 +61,9 @@ CURR_DRIVE      EQU     $181E      	; current selected drive
 CURR_CMD_PARAM  EQU     $181F      	; current command parameter
 FREE_CLUSTER    EQU     $1820           ; (32 bit) - last free cluster
 CURR_DIR_BLK    EQU     $1824       	; (32 bit) - current directory LBA
+DBG_PRINT	EQU	$1828		; 1 = Print debug info
 
-BAS_JMP_CODE	EQU	$1830		; Code for Basic Warm/Cold start JMP ($20 bytes reserved)
-DOS_RET_CODE	EQU	BAS_JMP_CODE + DOS_JMP_RET - BAS_JMP	; Address for DOS return code
+FILE_BUFF	EQU	$1C00		; 512 byte file buffer for .exe/.com/.bas in Monitor RAM
 
 ; External Routines ************************************************************
 

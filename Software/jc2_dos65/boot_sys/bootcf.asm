@@ -1,7 +1,7 @@
 ; ******************************************************************************
 ; The Disk Operating System for 6502 Microprocessors
 ;
-; JC2 DOS65, Version 0.2.8 by Emile, original design (V0.2.0) by Joerg Walke
+; JC2 DOS65, Version 0.2.9 by Emile, original design (V0.2.0) by Joerg Walke
 ;
 ; Developed for the Junior Computer ][
 ;
@@ -21,7 +21,7 @@
 
 VERMAIN   	EQU     '0'    		; main version
 VERPSUB    	EQU     '2'    		; primary sub version
-VERSSUB		EQU	'8'		; secondary sub version
+VERSSUB		EQU	'9'		; secondary sub version
 
 ; List Of Changes **************************************************************
 ; V0.2.1: 11-04-25 Emile boot.asm renamed in bootcf.asm and adapted for CF-IDE interface.
@@ -40,6 +40,7 @@ VERSSUB		EQU	'8'		; secondary sub version
 ; V0.2.7: Couple of bug-fixes with path-name string and CD command.
 ; V0.2.8: Enabling RAM-BANK 4 for BASIC and RAM-BANK 0 for DOS. Now Basic programs
 ;         can load all the way up to $AFFF.
+; V0.2.9: BASIC related DOS functions are now copied into Monitor RAM area.
 ; ******************************************************************************
 		OPT h- ; do not add file header
 		OPT f+ ; save as single block
@@ -60,9 +61,6 @@ VERSSUB		EQU	'8'		; secondary sub version
 ; root_dir_first_cluster: D_START_DIR, this is usually 2
 ; lba_addr = cluster_begin_lba + (cluster_nr - 2) * sectors_per_cluster
 ;------------------------------------------------------------------------------------------------
-
-DBG_PRINT	EQU	1			; Set to 1 for debug print-outs
-
 		ICL "macros.inc"		; boot.sys macro definitions for MADS
 		ICL "defines.inc"		; boot.sys defines
 		
@@ -90,5 +88,4 @@ BLOCK_2
 BOOT_SYS_END    BRK
 		ORG ((*/256)+1)*256		; next free page
 SIS_BUFF	.ds 	512			; SIS Buffer 
-FILE_BUFF	.ds	512			; .exe file buffer
 		END

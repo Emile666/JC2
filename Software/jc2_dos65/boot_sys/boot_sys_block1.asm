@@ -7,7 +7,6 @@
 ; into memory and then to execute it.
 ; 
 ; Assembler: MADS-Assembler
-; V0.1: 22-05-25, Emile first version
 ;-------------------------------------------------------------------------------
 
 ; subtract two clusters from START_CLUSTER address *****************************
@@ -64,7 +63,8 @@ NEXT_CLUSTER    JSR     GET_NEXT_CLSTR      	; get next cluster in chain in CURR
                 MVA	D_SECT_PER_CLST SCNT	; SCNT = D_SECT_PER_CLST
                 JMP     LOAD_BLK            	; load first block of cluster
                 
-OS_START        JMP     OS_MAIN             	; jump to OS entry point
+OS_START        MVA	#0 DBG_PRINT		; 0 = No debug print info
+		JMP     OS_MAIN             	; jump to OS entry point
 
 ;-------------------------------------------------------------------------------
 ; Copy a word, that is part of a cluster nr for boot.sys, into CURR_CLUSTER.
@@ -199,7 +199,7 @@ SET_CURR_FATBLK STA     CURR_FAT_BLK,X-      	; store new block pointer byte as 
                 
                 PHW	BLKBUF			; save old memory pointer to stack
                 LDXYI   NUM32
-                JSR     DEV_RD_LBLK_BUF     	; load FAT block into standard buffer ($600)
+                JSR     DEV_RD_LBLK_BUF     	; load FAT block into standard buffer ($0600)
 		PLW	BLKBUF			; restore old memory pointer from stack
 LOAD_FAT_END    RTS
                 

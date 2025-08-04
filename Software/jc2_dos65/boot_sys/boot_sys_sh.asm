@@ -1,8 +1,6 @@
 ;-------------------------------------------------------------------------------
 ; This file contains the SHELL portion of the BOOT.SYS file.
-; 
 ; Assembler: MADS-Assembler
-; V0.1: 22-05-25, Emile first version
 ;-------------------------------------------------------------------------------
 
 ; ******************************************************************************
@@ -442,12 +440,12 @@ CHK_HIDDEN      LSR                         		; check if hidden file
 CHK_SYSTEM      LSR                         		; check if system file
 CHK_LABEL       LSR                         		; check if disk label
                 ; #### PRINT LABEL DISABLED ####################################
-                BCS     CB_PRINT_CONT       		; it's a label, skip to next entry
+                ;BCS     CB_PRINT_CONT       		; it's a label, skip to next entry
 
-                ;BCC     PRINT_DIR_ENTRY
-                ;JSR     PRINT_LABEL         		; print disk label
-                ;INC     LINE_CNT
-                ;BNE     CHK_LINE_COUNT     		 ; branch always
+                BCC     PRINT_DIR_ENTRY
+                JSR     PRINT_LABEL         		; print disk label
+                INC     LINE_CNT
+                BNE     CHK_LINE_COUNT     		 ; branch always
                 ; ##############################################################
 PRINT_DIR_ENTRY LDA.NE  TERM_CHAR COMP_MASK		; check the termination char, if >0 then just compare file names
                 JSR     CB_FIND_SUBDIR      		; TC = 0, so check if directory entry
@@ -717,68 +715,6 @@ CPFN83_4	MVA	#' ' FILENAME,Y+	; fill remainder with spaces
 		CPY.NE	#8   CPFN83_4		; branch if not all chars copied
 CPFN_DN		RTS				; return
 		
-; **** CFC_LOAD routine for CF-IDE driver **************************************
-; Called with a CMD_LOAD from the CFC Device-driver through a JMP CFC_LOAD_VEC.
-; ******************************************************************************
-CFC_LOAD	STXY	FNAME_PTR
-		PRSTR	TXT_LOAD		; Print 'CFC_LOAD'
-		JSR	FNAME2FN83		; Convert filename to FN83 filename
-		PRCH	'['
-		LDXYI	FILENAME		; 
-		JSR	OS_STRING_OUT		; Print FN83 filename
-		PRCH	']'
-		JSR     SAVE_ACT_DIR        	; save actual directory LBA
-		JSR	SH_LOAD_BAS		; Load .bas file in memory
-		SEC				; C=1: OK
-		RTS				; return
-
-TXT_LOAD	.by	'CFC_LOAD: ' $00
-FNAME_PTR	.word 	$0000
-
-; **** CFC_SAVE routine for CF-IDE driver **************************************
-; Called with a CMD_SAVE from the CFC Device-driver through a JMP CFC_SAVE_VEC.
-; ******************************************************************************
-CFC_SAVE	STXY	FNAME_PTR
-		PRSTR	TXT_SAVE		; Print 'CFC_SAVE'
-		PRHEX16	$2000			; Print end-address
-		JSR	SPCOUT		
-		JSR	FNAME2FN83		; Convert filename to FN83 filename
-		PRCH	'['
-		LDXYI	FILENAME		; 
-		JSR	OS_STRING_OUT		; Print FN83 filename
-		PRCH	']'
-		MWA	$2000 SAVE_LEN		; SAVE_LEN = end-address
-		SBW	SAVE_LEN #$2000		; Get net file-size
-		MVA	SAVE_LEN+1 SAVE_SECS	; SAVE_SECS now contains #pages of 256 bytes
-		LSR	SAVE_SECS		; SAVE_SECS now contains #sectors of 512 bytes needed
-		LDA.EQ	SAVE_LEN NO_ADD_SEC	; branch if LSB of SAVE_LEN is 0
-
-		INC	SAVE_SECS		; Add 1 to SAVE_SECS if LSB of SAVE_LEN is not 0
-NO_ADD_SEC	PRSTR	TXT_SECND1		; Print ', size: '
-		LDXY	SAVE_LEN		; Size in bytes
-		JSR	PRINT_INT16		; Print it
-		PRSTR	TXT_SECND2		; Print ', sec: '
-		LDA	SAVE_SECS		; Get sector count
-		JSR	NUMOUT			; Print #sectors needed
-		JSR	CROUT			; Print CR
-		
-		PRSTR	TXT_OS_CREATE		; Print 'OS_CREATE'
-		LDA	#FA_ARCHIVE		; File is modified 
-		JSR	OS_CREATE		; Create file in current dir. and update FAT
-		PRSTR	TXT_OS_SAVFILE		; Print 'OS_SAVE_FILE'
-		JSR	OS_SAVE_FILE		; Save contents of file
-		JSR	SIS_DEL			; Subtract #allocated clusters from SIS and write back to disk
-		SEC				; C=1: OK
-		RTS				; return
-
-TXT_SAVE	.by	'CFC_SAVE: $' $00
-TXT_SECND1	.by	', size: ' $00
-TXT_SECND2	.by	', sec: ' $00
-SAVE_LEN	.word	$0000			; #bytes to save
-SAVE_SECS	.byte	$00			; #sectors (of 512 B) to save
-TXT_OS_CREATE	.by	'OS_CREATE' CR $00
-TXT_OS_SAVFILE 	.by	'OS_SAVE_FILE' CR $00
-
 ; **** Add subdir name to D_SUBDIR_NAME ****************************************
 ; Check if directory entered is current dir (..).
 ; Output: C=0: not a current dir, C=1: is current dir.
@@ -894,8 +830,7 @@ LP_FAT_ENTRY    JSR     READ_ENTRY_BYTE     		; read entry byte
 		CPD	#$0FFFFFFF CURR_CLUSTER		; CURR_CLUSTER == $0FFFFFFF ?
 		BNE	CLR_FAT32_LP1			; branch if file has more clusters to clear
 		
-		LDXYI	CURR_FAT_BLK			; LBA of current FAT block
-		JMP	DEV_WR_LBLK_BUF			; write FAT block back to disk and return
+		JMP	OS_SAVE_FAT			; Write updated FAT buffer back to disk and return
 
 TEMP_CLUSTER	.dword	$00000000
 		
@@ -998,28 +933,45 @@ SH_REM          PHW	BLKBUF			; DEBUG: For testing SIS routines
 SH_REM_X	RTS
                 
 ; **** BASIC Command ***********************************************************
-; Executes Basic in ROM. Return with 'DOS' command. 
+; Executes Basic in ROM. Return with 'DOS' command.
 ; ******************************************************************************
-SH_BASIC        JSR	SWITCH_TO_ROM		; Make sure BASIC ROM is enabled
-		JMP	BAS_JMP_CODE		; Run BAS_JMP_CODE from $1830 RAM area
+SH_BASIC        JSR	MON2RAM			; Select Monitor RAM, disable ROM
+		JSR	SWITCH_TO_ROM		; Enable BASIC ROM
+		JMP	MON_RAM_BLOCK.BAS_JMP	; Run BAS_JMP_CODE from Monitor RAM area
 
 ; ------------------------------------------------------------------------------
-; This routine copies the BAS_JMP code below to the RAM-area at $1820. This is
-; done during at OS MAIN, the OS Entry-point.
+; This routine copies the MON_RAM_BLOCK code below to the Monitor RAM-area at 
+; $1C00 - $1FFF. The entire boot.sys code (this code!) is stored in RAM-BANK 0
+; (= DOS RAM-BANK) by the boot-loader.
+; Note: MON_RAM_BLOCK code-size should be < 256 bytes!
+; This routine is called by OS_MAIN, the DOS Entry-point.
 ; ------------------------------------------------------------------------------
-CP_BAS_JMP	LDX	#BAS_JMP_END - BAS_JMP	; Amount of bytes to copy
-SH_BAS_LP	LDA	BAS_JMP,X		; Get byte to copy
-		STA	BAS_JMP_CODE,X		; Store in $1830 RAM area
-		DEX
-		BPL	SH_BAS_LP		; Branch if not done yet
-		RTS				; return
-		
+CP_MON_RAM	JSR	MON2RAM				; Select Monitor RAM, disable ROM
+		; Do not use RAMB_DOS here: 1) RAMB_DOS is default when starting boot.sys 2) is not yet copied to Monitor RAM
+		LDX	#0				; Init index
+SH_BAS_LP	LDA	MON_RAM_START,X			; Get byte to copy
+		STA	MON_RAM_BLOCK.RAMB_DOS,X	; Store in Monitor RAM area
+		INX					; More bytes to copy?
+		CPX	#(MON_RAM_END - MON_RAM_START)	; Amount of bytes to copy to Monitor RAM
+		BNE	SH_BAS_LP			; Branch if more bytes to copy
+		RTS					; Return
+
+MON_RAM_START
+;-------------------------------------------------------------------------------------------------------
+MON_RAM_BLOCK	.local, $1E00			; Assemble into Monitor RAM ($1E00-$1FFD)
+; Note that FILE_BUFF is located at $1C00-1DFF (512 bytes)!
+;-------------------------------------------------------------------------------------------------------
+RAMB_DOS	LDX	#0			; RAM-BANK 0 is the main RAM-BANK, used by DOS
+		BEQ	RAMB_JMP		; branch always
+
+RAMB_BAS	LDX	#4			; RAM-BANK 4 is the 1st RAM-BANK
+RAMB_JMP	JMP	SET_RAMBANK		; Enable RAM-BANK for BASIC-programs and return
+
 ;--------------------------------------------------------------------------------
-; This function gets copied to BAS_JMP_CODE in memory, so that a RAM-BANK switch
+; This function gets copied to Monitor RAM, so that a possible RAM-BANK switch
 ; does not affect the boot.sys code (which is in page 0 of the RAM-BANK area).
 ;--------------------------------------------------------------------------------
-BAS_JMP		LDX	#4			; RAM-BANK 4 is the 1st RAM-BANK
-		JSR	SET_RAMBANK		; Enable RAM-BANK for BASIC-programs
+BAS_JMP		JSR	RAMB_BAS		; Enable RAM-BANK for BASIC-programs
 		LDA	Wrmjph	    	    	; Is BASIC Warm-start vector already set?
 		CMP.NE	#$B1 SH_BCOLD 	    	; If not in this range, branch and do a BASIC cold start
 		
@@ -1030,10 +982,112 @@ SH_BCOLD	JMP	LAB_COLD	    	; Basic Cold-start
 ; The RAM-BANK MUST be switched to MAIN RAM-bank 0, because the DOS code is there.
 ; If the switch back is not done, the return jump will crash.
 ;--------------------------------------------------------------------------------
-DOS_JMP_RET	LDX	#0			; RAM-BANK 0 is the main RAM-BANK and used by DOS
-		JSR	SET_RAMBANK		; Enable main RAM-BANK for DOS
+DOS_JMP_RET	JSR	RAMB_DOS		; Enable main RAM-BANK for DOS
 		JMP	OS_SHELL_ENTRY		; Default return for Monitor and BASIC
-BAS_JMP_END
+
+; **** CFC_LOAD routine for CF-IDE driver **************************************
+; Called with a CMD_LOAD from the CFC Device-driver through a JMP (CF_LOAD_VEC).
+; ******************************************************************************
+CFC_LOAD	JSR	RAMB_DOS		; Enable main RAM-BANK for DOS
+		PRSTR	TXT_LOAD		; Print 'CFC_LOAD'
+		JSR	FNAME2FN83		; Convert filename to FN83 filename
+		;PRCH	'['
+		;LDXYI	FILENAME		; 
+		;JSR	OS_STRING_OUT		; Print FN83 filename
+		;PRCH	']'
+		JSR     SAVE_ACT_DIR        	; save actual directory LBA
+		JSR	SH_LOAD_BAS		; Load .bas file in memory
+		JSR	RAMB_BAS		; Enable BASIC RAM-BANK again
+		SEC				; C=1: OK
+		RTS				; return to BASIC
+
+; **** Copy Second and other blocks of File to Memory **************************
+; Input: PSTR   : pointer to memory-source
+;        END_PTR: pointer to memory-destination
+; This routine copies a page (512 B) from one memory-location to another.
+; Since this routines is in Monitor-RAM, it is save to switch RAM-Banks.
+; Call tree: CFC_LOAD -> SH_LOAD_BAS -> OS_LOAD_FILE -> LOAD_NEXT_BLKS -> COPY_BLK_DEST
+; ******************************************************************************
+CP_BLK_DEST	JSR	RAMB_BAS			; Select BASIC RAM-BANK
+		LDY	#0				; Init. index
+CP_BLK0_LP	MVA	(PSTR),Y (END_PTR),Y		; Get byte from buffer and store in destination
+		INW	END_PTR				; Increment destination pointer (macro)
+		INW	PSTR				; Increment buffer pointer (macro)
+		LDA	PSTR+1				; MSB of buffer pointer
+		CMP.NE	#>FILE_BUFF+2 CP_BLK0_LP		; branch if not 2 pages (512 bytes) increased yet
+		JMP	RAMB_DOS			; Select DOS RAM-BANK again and return
+
+; **** CFC_SAVE routine for CF-IDE driver **************************************
+; Called with a CMD_SAVE from the CFC Device-driver through a JMP (CF_SAVE_VEC).
+; ******************************************************************************
+CFC_SAVE	JSR	RAMB_DOS			; Enable main RAM-BANK for DOS
+		JSR	CFC_SAVE_CNT			; Call CFC_SAVE function in DOS RAM area
+		JSR	RAMB_BAS			; Switch back to BASIC RAM-BANK area
+		SEC					; C=1: OK
+		RTS					; return to BASIC
+
+; **** Write Logical Block *****************************************************
+; Input: [X,Y] points to 32-bit destination LBA
+;        BLKBUF,BLKBUFH = 16 Bit Source Address
+; Routine is placed in Monitor RAM, because it may SAVE memory in the RAM-BANK area. 
+; Call-tree: CFC_SAVE -> CFC_SAVE_CNT -> OS_SAVE_FILE -> DEV_WR_LBLK
+; ******************************************************************************
+DEV_WR_LBLK	PHX					; Save X register
+		JSR	RAMB_BAS			; Switch to BASIC RAM-BANK area (disabling DOS area)
+		PLX					; Get X register back
+		LDA     #CMD_WRITE			; Call Device-driver Write routine
+                JSR     CMDDEV
+		JMP	RAMB_DOS			; Enable main RAM-BANK for DOS again and return
+
+;-------------------------------------------------------------------------------------------------------
+.endl
+;-------------------------------------------------------------------------------------------------------
+MON_RAM_END
+
+; **** CFC_SAVE routine for CF-IDE driver **************************************
+; Called from CFC_SAVE which is located in Monitor RAM.
+; ******************************************************************************
+CFC_SAVE_CNT	PRSTR	TXT_SAVE		; Print 'CFC_SAVE'
+		PRHEX16	$2000			; Print end-address
+		JSR	SPCOUT		
+		JSR	FNAME2FN83		; Convert filename to FN83 filename
+		;PRCH	'['
+		;LDXYI	FILENAME		; 
+		;JSR	OS_STRING_OUT		; Print FN83 filename
+		;PRCH	']'
+		MWA	$2000 SAVE_LEN		; SAVE_LEN = end-address
+		SBW	SAVE_LEN #$2000		; Get net file-size
+		MVA	SAVE_LEN+1 SAVE_SECS	; SAVE_SECS now contains #pages of 256 bytes
+		LSR	SAVE_SECS		; SAVE_SECS now contains #sectors of 512 bytes needed
+		LDA.EQ	SAVE_LEN NO_ADD_SEC	; branch if LSB of SAVE_LEN is 0
+
+		INC	SAVE_SECS		; Add 1 to SAVE_SECS if LSB of SAVE_LEN is not 0
+NO_ADD_SEC	PRSTR	TXT_SECND1		; Print ', size: '
+		LDXY	SAVE_LEN		; Size in bytes
+		JSR	PRINT_INT16		; Print it
+		PRSTR	TXT_SECND2		; Print ', sec: '
+		LDA	SAVE_SECS		; Get sector count
+		JSR	NUMOUT			; Print #sectors needed
+		JSR	CROUT			; Print CR
+		
+		PRSTR	TXT_OS_CREATE		; Print 'OS_CREATE'
+		LDA	#FA_ARCHIVE		; File is modified 
+		JSR	OS_CREATE		; Create file in current dir. and update FAT
+		PRSTR	TXT_OS_SAVFILE		; Print 'OS_SAVE_FILE'
+		JSR	OS_SAVE_FILE		; Save contents of file
+		JSR	SIS_DEL			; Subtract #allocated clusters from SIS and write back to disk
+		SEC				; C=1: OK
+		RTS				; return
+
+TXT_LOAD	.by	'CFC_LOAD: ' $00
+
+TXT_SAVE	.by	'CFC_SAVE: $' $00
+TXT_SECND1	.by	', size: ' $00
+TXT_SECND2	.by	', sec: ' $00
+SAVE_LEN	.word	$0000			; #bytes to save
+SAVE_SECS	.byte	$00			; #sectors (of 512 B) to save
+TXT_OS_CREATE	.by	'OS_CREATE' CR $00
+TXT_OS_SAVFILE 	.by	'OS_SAVE_FILE' CR $00
 
 ; **** BRUN Command ************************************************************
 ;
@@ -1149,7 +1203,7 @@ CL2KB_X		RTS					; return
 		
 ; Get Info from System Information Sector **************************************
 GET_SIS		JSR	INIT_SIS_BUF			; Init SIS Buffer for CMD_READ command
-		LDXYI	D_PART_START			; macro Ptr(X,Y) = D_PART_START
+		LDXYI	D_PART_START			; macro Ptr(X,Y) = D_PART_START ($0400)
 		JSR 	DEV_RD_LBLK           		; Read Volume ID again
 		MVAX	4 D_PART_START SYS_INFO_LBA	; SYS_INFO_LBA = D_PART_START
 		ADW	SYS_INFO_LBA SIS_OFFSET		; SYS_INFO_LBA = D_PART_START + *SIS_OFFSET
@@ -1163,6 +1217,8 @@ GET_SIS		JSR	INIT_SIS_BUF			; Init SIS Buffer for CMD_READ command
 		JSR	INIT_SIS_BUF			; Init SIS Buffer for CMD_READ command
 		LDXYI	SYS_INFO_LBA			; Read Sys. Info. Sector into SIS-buffer
 		JSR 	DEV_RD_LBLK           		; Read SIS sector
+		LDA	DBG_PRINT
+		BEQ	FREE_KB_UPDATE
 		PRSTR	TXT_FFREE_CLST			; print 'First Free Cluster:$'
 		PRHEX32	SIS_BUFF+$01EC
 		JSR	CROUT
@@ -1191,7 +1247,7 @@ SIS_WRITE	LDA	SIS_CNT				; Print SIS_CNT
 		MVAX	4 FREE_CLUSTER SIS_BUFF+$01EC	; SIS First free cluster = FREE_CLUSTER
 		JSR	INIT_SIS_BUF			; Init SIS Buffer for CMD_WRITE command
 		LDXYI	SYS_INFO_LBA 			; Sys. Info. Sector LBA
-		JSR 	DEV_WR_LBLK           		; Write SIS to disk
+		JSR 	DEV_WR_LBLK           		; Write SIS to disk, use non RAM-BANK version, since SIS_BUFF is here
 		JMP	FREE_KB_UPDATE			; Update FREE_KB and return
 
 SIS_DEL		PRSTR	SISM

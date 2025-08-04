@@ -84,6 +84,16 @@
 	TAY
 .endm
 
+.macro	PHX					; Push X-register
+	TXA
+	PHA
+.endm
+
+.macro	PLX					; Pull X-register
+	PLA
+	TAX
+.endm
+
 .macro	MVAX	n src dst			; Move n bytes from SRC to DST using X as index
 	LDX	#:n-1
 lp	MVA	:src,X :dst,X-
