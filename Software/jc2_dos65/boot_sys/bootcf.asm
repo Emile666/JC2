@@ -1,7 +1,7 @@
 ; ******************************************************************************
 ; The Disk Operating System for 6502 Microprocessors
 ;
-; JC2 DOS65, Version 0.2.9 by Emile, original design (V0.2.0) by Joerg Walke
+; JC2 DOS65, Version 0.3.0 by Emile, original design (V0.2.0) by Joerg Walke
 ;
 ; Developed for the Junior Computer ][
 ;
@@ -20,8 +20,8 @@
 ; ******************************************************************************
 
 VERMAIN   	EQU     '0'    		; main version
-VERPSUB    	EQU     '2'    		; primary sub version
-VERSSUB		EQU	'9'		; secondary sub version
+VERPSUB    	EQU     '3'    		; primary sub version
+VERSSUB		EQU	'0'		; secondary sub version
 
 ; List Of Changes **************************************************************
 ; V0.2.1: 11-04-25 Emile boot.asm renamed in bootcf.asm and adapted for CF-IDE interface.
@@ -41,6 +41,9 @@ VERSSUB		EQU	'9'		; secondary sub version
 ; V0.2.8: Enabling RAM-BANK 4 for BASIC and RAM-BANK 0 for DOS. Now Basic programs
 ;         can load all the way up to $AFFF.
 ; V0.2.9: BASIC related DOS functions are now copied into Monitor RAM area.
+; V0.3.0: - Improved CF-card error-checking & handling
+;         - Volume-label added for root-dir
+;         - CF device-driver routines now in Monitor RAM
 ; ******************************************************************************
 		OPT h- ; do not add file header
 		OPT f+ ; save as single block

@@ -25,6 +25,7 @@ ssptr_h		EQU	$79		; BASIC filename pointer MSB
 NUM32      	EQU   	$C0     	; low 32 bit number byte (moved from $F8)
 SUM32           EQU     $C4             ; low 32 bit number byte (moved from $FC)
 END_PTR		EQU	$CC		; CFC_LOAD destination pointer, also used by BIOS ROM checksum routine
+MSEC		EQU	$D6		; msec time-out counter
 SAVEX		EQU 	$D8		; Temp. save X register (same as BIOS)
 SAVEY		EQU	$D9		; Temp. save Y register (same as BIOS)
 BLKBUF		EQU	$DC
@@ -85,7 +86,11 @@ CMDDEV          EQU     $E0BA
 OPEN_DEVICE     EQU     $E1AA
 READTIME        EQU     $E2DE			; BIOS v1.2.1
 READDATE        EQU     $E2E2			; BIOS v1.2.1
+DELAY		EQU	$E14D
 OS_STRING_OUT	EQU	$F682			; SPRINT in BIOS v1.2.1, but same routine
+INIT_BLKBUF	EQU	$F68B
+CFWAIT		EQU	$F8B5
+LOAD_LBA_CF	EQU	$FC85
 SET_RAMBANK	EQU	$FD53			; BIOS v1.2.4
 MON2ROM		EQU	$FD7D			; Monitor to ROM
 MON2RAM		EQU	$FD86			; Monitor to RAM, enable RAM behind it
@@ -98,7 +103,7 @@ DIR_BLK_BUFH    EQU     DIR_BLK_BUF+$100	; upper page of directory buffer
 CURR_VOLUME     EQU     $0400           	; Current Volume Descriptor
 FILE_TABLE      EQU     CURR_VOLUME+$20  	; File Descriptor Table
 MOUNT_TABLE     EQU     $0500           	; Table of mounted devices
-BLOCK_BUFF      EQU     $0600           	; Data Block Buffer
+FAT_BUF      	EQU     $0600           	; Data Block Buffer
 
 SIS_OFFSET	EQU	SIS_BUFF+$30		; 2-bytes: System Information Sector Offset
 
@@ -186,5 +191,19 @@ D_LAST_WR_TIME  EQU     $16             	; 2 Bytes - Last Write Time
 D_LAST_WR_DATE  EQU     $18             	; 2 Bytes - Last Write Date
 D_START_CLST    EQU     $1A             	; 2 Bytes - Start Cluster Low Word
 D_FILE_SIZE     EQU     $1C             	; 4 Bytes - File Size
+
+;----------------------------------------------------------------------------
+; CF-IDE Hardware Registers (on stand-alone card or IO2-board)
+;----------------------------------------------------------------------------
+CFBASE		EQU 	$0C80		; Base card-address for CF card
+CFREG0		EQU	CFBASE+0	; Data port
+CFREG1		EQU	CFBASE+1	; Read: error-code, write: feature
+CFREG2		EQU	CFBASE+2	; Number of sectors to transfer
+CFREG3		EQU	CFBASE+3	; Sector address LBA 0 [0:7] (LSB)
+CFREG4		EQU	CFBASE+4	; Sector address LBA 1 [8:15]
+CFREG5		EQU	CFBASE+5	; Sector address LBA 2 [16:23]
+CFREG6		EQU	CFBASE+6	; Sector address LBA 3 [24:27] (MSB)
+CFREG7		EQU	CFBASE+7	; Read: Status, Write: Command
+CFREG8		EQU	CFBASE+8	; A write with 0x00 is a HW reset
 
 

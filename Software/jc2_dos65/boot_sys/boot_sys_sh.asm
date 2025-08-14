@@ -267,7 +267,11 @@ PRINT_TIME      LDY     #D_LAST_WR_TIME     		; index to file Last write time
                 JSR	SPCOUT		    			; Print space
 		PRCLW	D_START_CLSTH CURR_DIR_ENTRY NUM32+2	; Print cluster nr (32-bit) and save it in NUM32
 		PRCLW	D_START_CLST  CURR_DIR_ENTRY NUM32
-		JSR	SPCOUT
+		CPD	#$00000000 NUM32			; NUM32 = 0L ?
+		BNE	CLNRNOT0				; Branch if cluster nr > 0
+		
+		MVA	#2 NUM32				; If boot-sector then Cluster nr = 2
+CLNRNOT0	JSR	SPCOUT
 		JSR	CLSTR_TO_LBA	   			; Convert NUM32 Cluster nr into NUM32 LBA
 		PRHEX32	NUM32			        	; and print as 32-bit hex number
 PRINT_EXIT	RTS
@@ -439,14 +443,13 @@ CHK_HIDDEN      LSR                         		; check if hidden file
                 BTST	CURR_CMD_PARAM 2 CB_PRINT_CONT	; Skip line counting if dir /H (display hidden files) is set
 CHK_SYSTEM      LSR                         		; check if system file
 CHK_LABEL       LSR                         		; check if disk label
-                ; #### PRINT LABEL DISABLED ####################################
-                ;BCS     CB_PRINT_CONT       		; it's a label, skip to next entry
+                BCC     PRINT_DIR_ENTRY			; branch if not a volume label
 
-                BCC     PRINT_DIR_ENTRY
+		; Print Volume Label
                 JSR     PRINT_LABEL         		; print disk label
                 INC     LINE_CNT
                 BNE     CHK_LINE_COUNT     		 ; branch always
-                ; ##############################################################
+
 PRINT_DIR_ENTRY LDA.NE  TERM_CHAR COMP_MASK		; check the termination char, if >0 then just compare file names
                 JSR     CB_FIND_SUBDIR      		; TC = 0, so check if directory entry
                 BCC     CB_PRINT_CONT       		; name is a file entry or includes wildcard chars, just exit
@@ -844,9 +847,9 @@ PRTST1		PRCH	'<'
 ; OUTPUT: A = Read Byte from FAT table
 ; ******************************************************************************
 WR_ENTRY_BYTE 	AND.NE  #$01 CURR_CLUSTER+1 CLR_UPPER_PAGE	; check bit 0 (= bit 7 of CURR_CLUSTER[0:3] because of ASL in FAT32 routine)
-                MVA	#0 BLOCK_BUFF,Y				; write entry byte from lower half of block buffer
+                MVA	#0 FAT_BUF,Y				; write entry byte from lower half of block buffer
                 RTS			    			; return
-CLR_UPPER_PAGE  MVA     #0 BLOCK_BUFF+256,Y    			; write entry byte from upper half of block buffer
+CLR_UPPER_PAGE  MVA     #0 FAT_BUF+256,Y    			; write entry byte from upper half of block buffer
                 RTS			    			; return
 
 ; **** Delete Command **********************************************************
@@ -865,11 +868,20 @@ SH_DEL_FILE	LDY	#D_FILENAME
 		MVA	#$E5 (CURR_DIR_ENTRY),Y			; $E5 first char. is a deleted file
 		LDY	#D_START_CLSTH
 		MWA	#$00 (CURR_DIR_ENTRY),Y			; delete high word of file-size
+
+		LDA	DBG_PRINT				; 1 = Print debug info
+		BEQ	SH_DEL_NO_DBG				; branch if no debug
+
+		PRSTR	TXT_SH_DEL1
 		PRHEX16	CURR_DIR_BLK
-		LDXYI	CURR_DIR_BLK				; CURR_DIR_BLK is LBA of current dir block
+		PRSTR	TXT_SH_DEL2
+		PRHEX32	CURR_CLUSTER
+		JSR	CROUT
+SH_DEL_NO_DBG	LDXYI	CURR_DIR_BLK				; CURR_DIR_BLK is LBA of current dir block
                 JSR     OS_SAVE_DIR	    			; write this dir entry back to disk
+		BCC	SH_DEL_X				; Branch on error
 		
-		JSR	CLR_FAT32_FILE				; Set all FAT entries for this file to 00000000 (free)
+SH_DEL_CONT	JSR	CLR_FAT32_FILE				; Set all FAT entries for this file to 00000000 (free)
 		JSR	INIT_FREE_CLUSTER			; FREE_CLUSTER = 2L
 		JSR     OS_NEXT_FREE_CLUSTER			; Get first free cluster in FREE_CLUSTER
 
@@ -878,6 +890,9 @@ SH_DEL_FILE	LDY	#D_FILENAME
 SH_DEL_X        JMP     LOAD_ACT_DIR        			; error - restore actual directory LBA and return
 
 SH_DEL_ERR	JMP	SH_FILE_ERR				; Print 'File not found' and return
+
+TXT_SH_DEL1	.by	'SH_DEL: $' $00
+TXT_SH_DEL2	.by	', $' $00
 
 ; **** Clear Screen Command ****************************************************
 ;
@@ -948,15 +963,32 @@ SH_BASIC        JSR	MON2RAM			; Select Monitor RAM, disable ROM
 ; ------------------------------------------------------------------------------
 CP_MON_RAM	JSR	MON2RAM				; Select Monitor RAM, disable ROM
 		; Do not use RAMB_DOS here: 1) RAMB_DOS is default when starting boot.sys 2) is not yet copied to Monitor RAM
-		LDX	#0				; Init index
-SH_BAS_LP	LDA	MON_RAM_START,X			; Get byte to copy
-		STA	MON_RAM_BLOCK.RAMB_DOS,X	; Store in Monitor RAM area
-		INX					; More bytes to copy?
-		CPX	#(MON_RAM_END - MON_RAM_START)	; Amount of bytes to copy to Monitor RAM
-		BNE	SH_BAS_LP			; Branch if more bytes to copy
+		MWA	#MON_RAM_START STOL		; Start of bytes to copy
+		MWA	#MON_RAM_BLOCK.RAMB_DOS END_PTR	; Store in Monitor RAM area
+		LDY	#0
+MON_RAM_LP	LDA	(STOL),Y			; Get byte from MON_RAM_BLOCK
+		STA	(END_PTR),Y			; Store in Monitor RAM area
+		INW	END_PTR				; END_PTR++
+		INW	STOL				; STOL/STOH ++
+		CPW	STOL #MON_RAM_END		; End-address reached?
+		BCC	MON_RAM_LP			; Branch if STOL < end-address
+
+		; ----------------------------------------------------------------------------------------------
+		; This PATCH does the following:
+		; - Copy the address of OWN_RD_LBLK_BUF into the JMP CMDDEV of DEV_RD_LBLK_BUF (replaces CMDDEV)
+		; - Copy the address of OWN_RD_LBLK     into the JMP CMDDEV of DEV_RD_LBLK (replaces CMDDEV)
+		; This ensures that the first blocks of boot.sys are read in using the BIOS CF routines,
+		; but any subsequent read uses the new routines in MON_RAM_BLOCK.
+		; A permanent solution would be to replace the BIOS routines with the ones in MON_RAM_BLOCK.
+		;
+		; NOTE: This is necessary because at boot, only the first block (with DEV_RD_LBLK(_BUF)) is
+		;       loaded, but there's not enough space in this first block for the updated routines.
+		; ----------------------------------------------------------------------------------------------
+		MWA	#MON_RAM_BLOCK.OWN_RD_LBLK_BUF DEV_RD_LBLK_BUF+3
+		MWA	#MON_RAM_BLOCK.OWN_RD_LBLK     DEV_RD_LBLK+3
 		RTS					; Return
 
-MON_RAM_START
+MON_RAM_START	; Start of Code-block that should be copied into Monitor RAM.
 ;-------------------------------------------------------------------------------------------------------
 MON_RAM_BLOCK	.local, $1E00			; Assemble into Monitor RAM ($1E00-$1FFD)
 ; Note that FILE_BUFF is located at $1C00-1DFF (512 bytes)!
@@ -965,7 +997,9 @@ RAMB_DOS	LDX	#0			; RAM-BANK 0 is the main RAM-BANK, used by DOS
 		BEQ	RAMB_JMP		; branch always
 
 RAMB_BAS	LDX	#4			; RAM-BANK 4 is the 1st RAM-BANK
-RAMB_JMP	JMP	SET_RAMBANK		; Enable RAM-BANK for BASIC-programs and return
+RAMB_JMP	JSR	SET_RAMBANK		; Enable RAM-BANK for BASIC-programs and return
+		NOP
+		RTS
 
 ;--------------------------------------------------------------------------------
 ; This function gets copied to Monitor RAM, so that a possible RAM-BANK switch
@@ -1015,6 +1049,7 @@ CP_BLK0_LP	MVA	(PSTR),Y (END_PTR),Y		; Get byte from buffer and store in destina
 		INW	PSTR				; Increment buffer pointer (macro)
 		LDA	PSTR+1				; MSB of buffer pointer
 		CMP.NE	#>FILE_BUFF+2 CP_BLK0_LP		; branch if not 2 pages (512 bytes) increased yet
+		PRCH	'.'
 		JMP	RAMB_DOS			; Select DOS RAM-BANK again and return
 
 ; **** CFC_SAVE routine for CF-IDE driver **************************************
@@ -1026,23 +1061,241 @@ CFC_SAVE	JSR	RAMB_DOS			; Enable main RAM-BANK for DOS
 		SEC					; C=1: OK
 		RTS					; return to BASIC
 
+;----------------------------------------------------------------------------
+; Command: CMD_READ_BUF, Read Single Data Block from Logical Address to Std. Block Buffer
+; Input  :  X,Y = Ptr[LO:HI] to 32 Bit LBA Source Address
+; Output :  C   = 0 Error, C = 1 Data OK
+;	    A   = Error Code
+;----------------------------------------------------------------------------
+OWN_RD_LBLK_BUF	JSR	INIT_BLKBUF		; set pointer to block buffer
+						; fall through to CF_RD_LBLK
+
+;----------------------------------------------------------------------------
+; Command: CMD_READ, Read Single Data Block from Logical Address
+; Input  : X,Y = Ptr[LO:HI] to 32 Bit LBA Source Address
+;	   BLKBUF,BLKBUFH = 16 Bit Destination Address
+; Output : C = 0 Error, C = 1 Data OK
+;	   A = Error Code
+;----------------------------------------------------------------------------
+OWN_RD_LBLK	JSR	CF_WAIT_BSY0		; Wait until BSY = 0
+		BCC	OWN_RD_X		; Branch on error
+		JSR	LOAD_LBA_CF		; Load LBA into CF-card
+						; fall through to OWN_RD_BLK
+
+;----------------------------------------------------------------------------
+; Read Single Data Block
+; Input:  BLKBUF,BLKBUFH = 16 Bit Destination Address
+; Output: C = 0 Error, C = 1 Read OK
+;	  A = Error Code
+;----------------------------------------------------------------------------
+OWN_RD_BLK	LDA 	#$01
+		STA 	CFREG2			; Read one Sector
+		LDA 	#$20			; Read Sector Command
+		STA 	CFREG7			; CF command register
+		JSR	CF_WAIT_BSY0		; Wait until BSY = 0
+		BCC	OWN_RD_X		; Branch on error
+		
+CF_RD_INFO	LDX	#$01			; initialize page counter
+		LDY	#$00			; initialize byte counter
+CF_RD_BLK0	JSR	CF_WAIT_DRQ1		; Wait until DRQ and RDY are set
+		BCC	OWN_RD_X		; Branch on timeout error
+		
+		LDA 	CFREG0			; read data-bytes
+		STA 	(BLKBUF),Y		; store in buffer
+		INY				; next byte
+		BNE 	CF_RD_BLK0		; branch if more bytes to read
+
+		INC	BLKBUF+1		; yes, increment block buffer page
+		DEX
+		BPL	CF_RD_BLK0		; two pages read? no, read next byte
+		
+		SEC				; yes, all data read, set C = 1 (no error)
+OWN_RD_X	RTS
+
 ; **** Write Logical Block *****************************************************
 ; Input: [X,Y] points to 32-bit destination LBA
 ;        BLKBUF,BLKBUFH = 16 Bit Source Address
 ; Routine is placed in Monitor RAM, because it may SAVE memory in the RAM-BANK area. 
 ; Call-tree: CFC_SAVE -> CFC_SAVE_CNT -> OS_SAVE_FILE -> DEV_WR_LBLK
 ; ******************************************************************************
-DEV_WR_LBLK	PHX					; Save X register
+DEV_WR_LBLK	JSR	CHECK_LBA			; Check for LBA errors
+		BCC	DEV_NO_WR			; branch if LBA error
+		PHX					; Save X register
 		JSR	RAMB_BAS			; Switch to BASIC RAM-BANK area (disabling DOS area)
 		PLX					; Get X register back
-		LDA     #CMD_WRITE			; Call Device-driver Write routine
-                JSR     CMDDEV
-		JMP	RAMB_DOS			; Enable main RAM-BANK for DOS again and return
+		
+		;LDA     #CMD_WRITE			; Call Device-driver Write routine
+                ;JSR     CMDDEV				; Call device-driver
+		JSR	OWN_WR_LBLK
+		PHP					; Save Carry flag
+		JSR	RAMB_DOS			; Enable main RAM-BANK for DOS again and return
+		PLP					; Get Carry flag
+DEV_NO_WR	RTS					; Return
+
+; **** Write Logical Block From Standard Buffer ********************************
+; Input: [X,Y] points to 32-bit LBA
+; It is called from OS_SAVE_FAT only.
+; ******************************************************************************
+DEV_WR_LBLK_BUF JSR	CHECK_LBA			; Check for LBA errors
+		BCC	DEV_NO_WR			; branch if LBA error
+		; LDA    	#CMD_WRITE_BUF	  		; Call Device-driver Write routine
+                ; JMP    	CMDDEV				; Call device-driver and return
+		; Fall-through to OWN_WR_LBLK_BUF
+		
+;----------------------------------------------------------------------------
+; Command: WRITE_BUF, Write Single Data Block from Std. Block Buffer to Logical Address
+; Input  : X,Y = Ptr[LO:HI] to 32 Bit LBA Destination Address
+; Output : C = 0 Error, C = 1 Data OK
+;	   A = Error Code
+;----------------------------------------------------------------------------
+OWN_WR_LBLK_BUF	JSR	INIT_BLKBUF		; set pointer to block buffer
+						; fall through to CR_WR_LBLK
+
+;----------------------------------------------------------------------------
+; Command: CMD_WRITE, Write Single Data Block to Logical Address
+; Input  : X,Y = Ptr[LO:HI] to 32 Bit LBA Destination Address
+;	   BLKBUF,BLKBUFH = 16 Bit Source Address
+; Output : C = 0 Error, C = 1 Data OK
+;	   A = Error Code
+;----------------------------------------------------------------------------
+OWN_WR_LBLK	JSR	CF_WAIT_BSY0		; Wait until BSY = 0
+		BCC	OWN_WR_X		; Branch on error
+		JSR	LOAD_LBA_CF		; Load LBA into CF-card
+						; fall through to CF_WR_BLK
+
+;----------------------------------------------------------------------------
+; Write Single Data Block
+; Input:  BLKBUF,BLKBUFH = 16 Bit Source Address
+; Output: C = 0 Error, C = 1 Write OK
+;	  A = Error Code
+;----------------------------------------------------------------------------
+OWN_WR_BLK	LDA 	#$01
+		STA 	CFREG2			; Read one Sector
+		LDA 	#$30			; Write Sector Command
+		STA 	CFREG7			; CF command register
+		JSR	CF_WAIT_BSY0		; Wait until BSY = 0
+		BCC	OWN_WR_X		; Branch on timeout error
+CF_WR_INFO	LDX	#$01			; initialize page counter
+		LDY	#$00			; initialize byte counter
+CF_WR_BLK0	JSR	CF_WAIT_DRQ1		; Wait until DRQ and RDY are set
+		BCC	OWN_WR_X		; Branch on timeout error
+
+		LDA 	(BLKBUF),Y		; read from buffer
+		STA 	CFREG0			; Write to CF-card
+		INY				; next byte
+		BNE 	CF_WR_BLK0		; branch if more bytes to write
+
+		INC	BLKBUF+1		; yes, increment block buffer page
+		DEX
+		BPL	CF_WR_BLK0		; two pages read? no, read next byte
+		
+		PRCH	'.'
+		SEC				; yes, all data read, set C = 1 (no error)
+OWN_WR_X	RTS
+		
+;----------------------------------------------------------------------------
+; This routine waits until the CF-card is ready.
+;----------------------------------------------------------------------------
+CF_WAIT_BSY0	LDA 	#0
+		STA 	MSEC		; msec counter
+
+CF_BSY_LP	LDA 	CFREG7		; read status register
+		AND 	#$80		; check busy flag
+		BEQ 	CF_OKE		; branch if BSY flag is cleared
+		
+		LDA 	#10		; delay = 10 msec.
+		JSR 	DELAY		; delay 10 msec.
+		INC 	MSEC		; msec-counter
+		LDA 	MSEC
+		BEQ 	CFBTO		; branch after 2550 msec. and no reset
+		BNE 	CF_BSY_LP	; branch always
+		
+CF_OKE		SEC			; C=1, OK
+		RTS			; BSY = 0, just return
+	
+CFBTO		STX 	SAVX		; Save X register
+		STY 	SAVY		; Save Y register
+		LDX 	#<TXT_HWERR    	; Print HW error
+		LDY 	#>TXT_HWERR
+CFPRIT		JSR 	OS_STRING_OUT  	; print		
+		LDA 	CFREG7		; Status register
+		JSR 	HEXOUT		; Print and return
+		LDX	SAVX		; Restore X register
+		LDY	SAVY		; Restore Y register
+		CLC			; C=0, error
+CF_END		RTS			; return
+
+TXT_HWERR       .by     'BSY=1, $' $00
+TXT_HWERR2      .by     'DRQ=0, $' $00
+SAVX		.byte	$00
+SAVY		.byte	$00
+
+; -------------------------------------------------------------------------------------
+CF_WAIT_DRQ1	LDA 	#0
+		STA 	MSEC		; msec counter
+
+CF_DRQ_LP	LDA 	CFREG7		; read status register
+		AND 	#$50		; check for RDY and DSC flags
+		CMP 	#$50		; BSY and DSC flags both set?
+		BEQ 	CF_OKE		; branch if RDY and DSC are both set
+
+		LDA 	#1		; delay = 1 msec.
+		JSR 	DELAY		; delay 1 msec.
+		INC 	MSEC		; msec-counter
+		LDA 	MSEC
+		BEQ 	CFDRQTO		; branch after 255 msec. and no RDY/DRQ set
+		BNE 	CF_DRQ_LP	; branch always
+
+CFDRQTO		STX 	SAVX		; Save X register
+		STY 	SAVY		; Save Y register
+		LDX 	#<TXT_HWERR2   	; Print HW error
+		LDY 	#>TXT_HWERR2
+		BNE	CFPRIT		; branch always
 
 ;-------------------------------------------------------------------------------------------------------
-.endl
+.endl		; MON_RAM_BLOCK
 ;-------------------------------------------------------------------------------------------------------
 MON_RAM_END
+
+;-------------------------------------------------------------------------------------------------------
+; Checks if LBA to write to is < $20, which means boot-sector area.
+; This indicates an error and should not happen.
+; Input : [X,Y] points to 32-bit LBA
+; Output: C=1, LBA >= $20. C=0, LBA < $20, error 
+;-------------------------------------------------------------------------------------------------------
+CHECK_LBA	STX	SAVEX			; ZP-var
+		STY	SAVEY			; ZP-var, SAVEY = SAVEX + 1
+		LDY	#3
+		
+CHK_LBA_LP	LDA.NE	(SAVEX),Y CHK_LBA_OK	; Branch if LBA >= $20
+		DEY.NE	CHK_LBA_LP		; Branch if not all LBA-bytes checked
+		LDA	(SAVEX),Y		; LBA LSB
+		CMP.CS	#$20 CHK_LBA_X		; Branch if LBA LSB >= $20
+
+		PRSTR	TXT_LBA_ERR
+		JSR	STACK_DUMP		; Print stack-dump
+		CLC
+		BCC	CHK_LBA_X		; Branch always
+		
+CHK_LBA_OK	SEC				; C=1, LBA oke
+CHK_LBA_X	LDX	SAVEX
+		LDY	SAVEY
+		RTS
+
+TXT_LBA_ERR	.by	'Error: LBA < $20!' CR $00
+SAVX		.byte	$00			; SAVEX = ZP, SAVX is RAM-BANK RAM
+
+STACK_DUMP	TSX
+		INX
+STRACE		LDA	$100,X			; stack trace
+		STX	SAVX
+		JSR	HEXOUT
+		LDA	#','
+		JSR	COUT
+		LDX	SAVX
+		INX
+		BNE	STRACE
+		JMP	CROUT			; Print CR and return
 
 ; **** CFC_SAVE routine for CF-IDE driver **************************************
 ; Called from CFC_SAVE which is located in Monitor RAM.
@@ -1051,10 +1304,10 @@ CFC_SAVE_CNT	PRSTR	TXT_SAVE		; Print 'CFC_SAVE'
 		PRHEX16	$2000			; Print end-address
 		JSR	SPCOUT		
 		JSR	FNAME2FN83		; Convert filename to FN83 filename
-		;PRCH	'['
-		;LDXYI	FILENAME		; 
-		;JSR	OS_STRING_OUT		; Print FN83 filename
-		;PRCH	']'
+		PRCH	'['
+		LDXYI	FILENAME		; 
+		JSR	OS_STRING_OUT		; Print FN83 filename
+		PRCH	']'
 		MWA	$2000 SAVE_LEN		; SAVE_LEN = end-address
 		SBW	SAVE_LEN #$2000		; Get net file-size
 		MVA	SAVE_LEN+1 SAVE_SECS	; SAVE_SECS now contains #pages of 256 bytes
@@ -1073,21 +1326,24 @@ NO_ADD_SEC	PRSTR	TXT_SECND1		; Print ', size: '
 		PRSTR	TXT_OS_CREATE		; Print 'OS_CREATE'
 		LDA	#FA_ARCHIVE		; File is modified 
 		JSR	OS_CREATE		; Create file in current dir. and update FAT
+		BCC	SV_CNT_X		; Branch (exit) on error
+		
 		PRSTR	TXT_OS_SAVFILE		; Print 'OS_SAVE_FILE'
 		JSR	OS_SAVE_FILE		; Save contents of file
+		BCC	SV_CNT_X		; Branch if error
+		
 		JSR	SIS_DEL			; Subtract #allocated clusters from SIS and write back to disk
 		SEC				; C=1: OK
-		RTS				; return
+SV_CNT_X	RTS				; return
 
 TXT_LOAD	.by	'CFC_LOAD: ' $00
-
 TXT_SAVE	.by	'CFC_SAVE: $' $00
 TXT_SECND1	.by	', size: ' $00
 TXT_SECND2	.by	', sec: ' $00
 SAVE_LEN	.word	$0000			; #bytes to save
 SAVE_SECS	.byte	$00			; #sectors (of 512 B) to save
-TXT_OS_CREATE	.by	'OS_CREATE' CR $00
-TXT_OS_SAVFILE 	.by	'OS_SAVE_FILE' CR $00
+TXT_OS_CREATE	.by	'OS_CREATE:' CR $00
+TXT_OS_SAVFILE 	.by	'OS_SAVE_FILE:' CR $00
 
 ; **** BRUN Command ************************************************************
 ;
@@ -1247,7 +1503,9 @@ SIS_WRITE	LDA	SIS_CNT				; Print SIS_CNT
 		MVAX	4 FREE_CLUSTER SIS_BUFF+$01EC	; SIS First free cluster = FREE_CLUSTER
 		JSR	INIT_SIS_BUF			; Init SIS Buffer for CMD_WRITE command
 		LDXYI	SYS_INFO_LBA 			; Sys. Info. Sector LBA
-		JSR 	DEV_WR_LBLK           		; Write SIS to disk, use non RAM-BANK version, since SIS_BUFF is here
+		; LDA     #CMD_WRITE			; Call Device-driver Write routine
+                ;JSR     CMDDEV				; Call device-driver
+		JSR	MON_RAM_BLOCK.OWN_WR_LBLK
 		JMP	FREE_KB_UPDATE			; Update FREE_KB and return
 
 SIS_DEL		PRSTR	SISM
