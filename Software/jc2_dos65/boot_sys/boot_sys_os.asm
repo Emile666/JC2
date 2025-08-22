@@ -458,9 +458,7 @@ LINK_FAT_ENTRY	PRSTR	TXT_LINK
 		LDA	PREV_CLUSTER			; get LSB of PREV_CLUSTER
 	:2	ASL					; SHL2, DWORD index in FAT page
 		TAY					; Y = DWORD byte 0 in FAT page
-		LDA	PREV_CLUSTER+1
-		LSR					; check bit 0 of PREV_CLUSTER[1]
-		BCS	LINK_UPPER_PAGE			; if bit 0 = 1 then write byte to upper half of block
+		BCS	LINK_UPPER_PAGE			; if $40..$7F then write byte to upper half of block
 		
 		; lower half block of Buffer
 		MWA	FREE_CLUSTER   FAT_BUF,Y	; Write CURR_CLUSTER nr into PREV_CLUSTER FAT entry
@@ -535,16 +533,12 @@ UPD_NO_DBG	LDA	FREE_CLUSTER		; get LSB of cluster nr
 ;         Y - Index To FAT Entry Byte
 ; ******************************************************************************
 WRITE_ENTRY_BYTE
-		TAX
-                LDA     FREE_CLUSTER+1
-                LSR				; check bit 0 of free_cluster[1]
-                TXA
-                BCS     WR_UPPER_PAGE       	; if bit 0 = 1 then write byte to upper half of block
+                BCS     WR_UPPER_PAGE       	; if $40..$7F then write byte to upper half of block
 		
-                STA     FAT_BUF,Y		; write entry byte to lower half of block buffer
+                STA     FAT_BUF,Y		; write entry byte to lower half of block buffer ($00..$3F)
 		RTS				
 		
-WR_UPPER_PAGE   STA     FAT_BUF+256,Y		; write entry byte to upper half of block buffer
+WR_UPPER_PAGE   STA     FAT_BUF+256,Y		; write entry byte to upper half of block buffer ($40..$7F)
 		RTS
                 
 ; **** Add Date and Time to subdir entry ***************************************
@@ -616,8 +610,9 @@ PARENT_DIR	LDY	#D_START_CLSTH+1		; index of MSB of 1st_cluster_high
 ; ******************************************************************************
 ADD_NEW_DIR_CLST
 		MWA	#DIR_BLK_BUF BLKBUF	; BLKBUF now points to dir block buffer
-		LDX	#1
-		LDA	#0
+		LDX	#1			; X = 1
+		LDA	#0			; A = 0
+		TAY				; Y = 0
 ANDIR_LP1	STA.NE	(BLKBUF),Y+ ANDIR_LP1	; Clear dir block buffer (512 bytes) and loop
 		INC	BLKBUF+1		; next page
 		DEX.PL	ANDIR_LP1		; branch always

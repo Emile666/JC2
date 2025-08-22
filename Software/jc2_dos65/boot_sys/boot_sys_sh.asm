@@ -816,18 +816,20 @@ CLR32_LP        ROL     SUM32,X+             		; shift bit 7 of entry index into
                 JSR     ADD_32_32	    		; NUM32 = START_FAT1 + CURR_CLUSTER / 128
                 JSR     LOAD_FAT_BLK	    		; Load FAT sector into standard buffer ($600)
                 PLA                         		; restore entry index
-                LDX     #$04                		; four bytes to read for a FAT32 entry
-                ASL                         		; multiply entry index by 2 (4 in total now)
+                ASL                         		; multiply entry index by 2 (4 in total now), C=1 for $40..$7F
                 TAY                         		; store entry index into Y
-		JSR	HEXOUT				; DEBUG
-                MVX	#4 NCNT				; 1 FAT entry = 4 bytes
+                MVX	#4 NCNT				; 1 FAT32 entry = 4 bytes
 		LDX	#0				; init. CURR_CLUSTER index
+		
+		; For this to work, C needs to be set (C=0 for $00..$3F, C=1 for $40..$7F) and Y = curr_cluster mod 256
 LP_FAT_ENTRY    JSR     READ_ENTRY_BYTE     		; read entry byte
 		STA     TEMP_CLUSTER,X      		; store byte in TEMP_CLUSTER to follow link
-		JSR	WR_ENTRY_BYTE			; FAT[CURR_CLUSTER] = 0
+		LDA	#$00				; A = 0
+		JSR	WRITE_ENTRY_BYTE		; FAT[CURR_CLUSTER] = 0
 		INY					; Increment FAT index counter
                 INX					; Increment CURR_CLUSTER counter
                 DEC.NE  NCNT LP_FAT_ENTRY   		; loop until all bytes copied
+		
 		MVAX	4 TEMP_CLUSTER CURR_CLUSTER	; CURR_CLUSTER = TEMP_CLUSTER
 		INC	SIS_CNT				; #clusters cleared + 1
 		CPD	#$0FFFFFFF CURR_CLUSTER		; CURR_CLUSTER == $0FFFFFFF ?
@@ -837,20 +839,13 @@ LP_FAT_ENTRY    JSR     READ_ENTRY_BYTE     		; read entry byte
 
 TEMP_CLUSTER	.dword	$00000000
 		
-PRTST1		PRCH	'<'
-		PRHEX32	CURR_CLUSTER
-		PRCH	'>'
+PRTST1		PRCH	'['
+		PRHEX16	CURR_CLUSTER
+		PRCH	']'
+		PRCH	'='
+		PRCH	'0'
+		PRCH	'L'
 		RTS
-
-; **** Write a Single FAT Entry Byte From Block Buffer *************************
-; INPUT : Y - Index To FAT Entry Byte
-; OUTPUT: A = Read Byte from FAT table
-; ******************************************************************************
-WR_ENTRY_BYTE 	AND.NE  #$01 CURR_CLUSTER+1 CLR_UPPER_PAGE	; check bit 0 (= bit 7 of CURR_CLUSTER[0:3] because of ASL in FAT32 routine)
-                MVA	#0 FAT_BUF,Y				; write entry byte from lower half of block buffer
-                RTS			    			; return
-CLR_UPPER_PAGE  MVA     #0 FAT_BUF+256,Y    			; write entry byte from upper half of block buffer
-                RTS			    			; return
 
 ; **** Delete Command **********************************************************
 ;
@@ -1123,9 +1118,6 @@ DEV_WR_LBLK	JSR	CHECK_LBA			; Check for LBA errors
 		PHX					; Save X register
 		JSR	RAMB_BAS			; Switch to BASIC RAM-BANK area (disabling DOS area)
 		PLX					; Get X register back
-		
-		;LDA     #CMD_WRITE			; Call Device-driver Write routine
-                ;JSR     CMDDEV				; Call device-driver
 		JSR	OWN_WR_LBLK
 		PHP					; Save Carry flag
 		JSR	RAMB_DOS			; Enable main RAM-BANK for DOS again and return
@@ -1138,8 +1130,6 @@ DEV_NO_WR	RTS					; Return
 ; ******************************************************************************
 DEV_WR_LBLK_BUF JSR	CHECK_LBA			; Check for LBA errors
 		BCC	DEV_NO_WR			; branch if LBA error
-		; LDA    	#CMD_WRITE_BUF	  		; Call Device-driver Write routine
-                ; JMP    	CMDDEV				; Call device-driver and return
 		; Fall-through to OWN_WR_LBLK_BUF
 		
 ;----------------------------------------------------------------------------
@@ -1189,7 +1179,6 @@ CF_WR_BLK0	JSR	CF_WAIT_DRQ1		; Wait until DRQ and RDY are set
 		DEX
 		BPL	CF_WR_BLK0		; two pages read? no, read next byte
 		
-		PRCH	'.'
 		SEC				; yes, all data read, set C = 1 (no error)
 OWN_WR_X	RTS
 		
@@ -1416,6 +1405,22 @@ SH_RUN_END      JMP     LOAD_ACT_DIR        	; restore actual directory LBA and 
 SH_VER		PRSTR	MSG_BOOT			; Print Title Info
 		RTS
 		
+; **** List a file *************************************************************
+; Output: -
+; ******************************************************************************
+SH_LIST		JSR     SAVE_ACT_DIR        	; save actual directory LBA
+                LDXYI   NO_PARMS            	; no command parameters
+                JSR     SH_GET_PARMS
+                BCC     SH_LIST_END
+
+                JSR     OS_FIND_FILE		; If found, CURR_CLUSTER contains cluster number
+                BCC     SH_LIST_END		; branch if file not found
+
+		;JSR	OS_LIST_FILE		; List file
+SH_LIST_END     JSR     LOAD_ACT_DIR        	; restore actual directory LBA
+                RTS
+
+
 ; **** Monitor call-back Routine ************************************************
 SH_MONITOR      PRSTR   MSG_MONITOR
                 JMP     MON_WARM_START
@@ -1558,6 +1563,7 @@ CHARS		dta	'B' , a(CMD_BASIC)		; byte, word
 		dta	'E' , a(CMD_ECHO)		
 		dta	'G' , a(CMD_GOTO)		
 		dta	'I' , a(CMD_IF)		
+		dta	'L' , a(CMD_LIST)		
 		dta	'M' , a(CMD_MKDIR)		
 		dta	'P' , a(CMD_PAUSE)		
 		dta	'R' , a(CMD_REM)
@@ -1574,6 +1580,7 @@ CMD_DEL		dta	3, c'EL'  , a(SH_DEL)    , $00	;
 CMD_ECHO	dta	4, c'CHO' , a(SH_ECHO)   , $00	; 
 CMD_GOTO	dta	4, c'OTO' , a(SH_GOTO)   , $00	; 
 CMD_IF		dta	2, c'F'   , a(SH_IF)     , $00	; 
+CMD_LIST	dta	4, c'IST' , a(SH_LIST)   , $00	; 
 CMD_MKDIR	dta	5, c'KDIR', a(SH_MKDIR)		; 
 CMD_MON		dta	3, c'ON'  , a(SH_MONITOR), $00	; 
 CMD_PAUSE	dta	5, c'AUSE', a(SH_PAUSE)  , $00	; 

@@ -148,7 +148,8 @@ READ_FAT_ENTRY1 PLP                         	; restore carry flag
 ; INPUT : Y - Index To FAT Entry Byte
 ; OUTPUT: A = Read Byte from FAT table
 ; ******************************************************************************
-READ_ENTRY_BYTE AND.NE  #$01 CURR_CLUSTER+1 RD_UPPER_PAGE	; check bit 0 (= bit 7 of CURR_CLUSTER[0:3] because of ASL in FAT32 routine)
+READ_ENTRY_BYTE BCS	RD_UPPER_PAGE				; if $40..$7F then read byte from upper half of block
+
                 LDA     FAT_BUF,Y        			; read entry byte from lower half of block buffer
                 RTS			    			; return
 RD_UPPER_PAGE   LDA     FAT_BUF+256,Y    			; read entry byte from upper half of block buffer
