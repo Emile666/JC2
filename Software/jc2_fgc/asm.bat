@@ -1,1 +1,1 @@
-mads fgc_main.asm -l:fgc_main.lst -o:fgc_main.bin -t:fgc_main.txt
+mads fgc_main.asm -i:"..\inc\" -l:fgc_main.lst -o:fgc_main.bin -t:fgc_main.txt

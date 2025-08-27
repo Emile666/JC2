@@ -15,26 +15,26 @@ B02		.local, FGC_BASE
                 NOP
                 NOP
                 
-FGC_SET_PAGE_2  STA     PIA_PORTC       ; switch ROM page
+FGC_SET_PAGE_2  STA     PPI_PORTC       ; switch ROM page
                 RTS
                 
 FGC_FDC_CMD     PHA                     ; save Accumulator
                 LDA     #$02
-                STA     PIA_PORTC       ; switch to ROM page 2. Code continues in page 2
+                STA     PPI_PORTC       ; switch to ROM page 2. Code continues in page 2
                 BNE	PAGE2_X		; branch always
                 
 FGC_VPU_CMD     PHA                     ; save Accumulator
                 LDA     #$01
-                STA     PIA_PORTC       ; switch to ROM page 1. Code continues in page 1
+                STA     PPI_PORTC       ; switch to ROM page 1. Code continues in page 1
                 BEQ	PAGE2_X
                 
 FGC_VPU_OUT     PHA                     ; save Accumulator
                 LDA     #$00
-                STA     PIA_PORTC       ; switch to ROM page 0
+                STA     PPI_PORTC       ; switch to ROM page 0
                 BEQ	PAGE2_X
                 
 _BLINK_HANDLER_ LDA     #$00
-                STA     PIA_PORTC       ; switch to ROM page 0
+                STA     PPI_PORTC       ; switch to ROM page 0
 PAGE2_X		PLA
 		RTS
 
@@ -51,26 +51,26 @@ START         	.byte	      $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF  ; 16 bytes reserved 
                 NOP
                 NOP
                 
-FGC_SET_PAGE_3  STA     PIA_PORTC       ; switch ROM page
+FGC_SET_PAGE_3  STA     PPI_PORTC       ; switch ROM page
                 RTS
                 
 FGC_FDC_CMD     PHA                     ; save Accumulator
                 LDA     #$02
-                STA     PIA_PORTC       ; switch to ROM page 2. Code continues in page 2
+                STA     PPI_PORTC       ; switch to ROM page 2. Code continues in page 2
                 BNE	PAGE3_X		; branch always
                 
 FGC_VPU_CMD     PHA                     ; save Accumulator
                 LDA     #$01
-                STA     PIA_PORTC       ; switch to ROM page 1. Code continues in page 1
+                STA     PPI_PORTC       ; switch to ROM page 1. Code continues in page 1
                 BEQ	PAGE3_X
                 
 FGC_VPU_OUT     PHA                     ; save Accumulator
                 LDA     #$00
-                STA     PIA_PORTC       ; switch to ROM page 0
+                STA     PPI_PORTC       ; switch to ROM page 0
                 BEQ	PAGE3_X
                 
 _BLINK_HANDLER_ LDA     #$00
-                STA     PIA_PORTC       ; switch to ROM page 0
+                STA     PPI_PORTC       ; switch to ROM page 0
 PAGE3_X		PLA
 		RTS
 

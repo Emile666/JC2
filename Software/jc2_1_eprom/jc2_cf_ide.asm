@@ -160,31 +160,28 @@ CF_RD_LBLK_BUF	JSR	INIT_BLKBUF		; set pointer to block buffer
 ; Output : C = 0 Error, C = 1 Data OK
 ;	   A = Error Code
 ;----------------------------------------------------------------------------
-CF_RD_LBLK	JSR	LOAD_LBA_CF		; Load LBA into CF-card
+CF_RD_LBLK	JSR 	CFWAIT			; Wait until CF-card ready
+		BCC	CF_RD_END		; branch on error
+		JSR	LOAD_LBA_CF		; Load LBA into CF-card
 						; fall through to CF_RD_BLK
 
 ;----------------------------------------------------------------------------
 ; Read Single Data Block
-; Input:  CFLBA3..CFLBA0 = 32 Bit LBA Address
-;         BLKBUF,BLKBUFH = 16 Bit Destination Address
+; Input:  BLKBUF,BLKBUFH = 16 Bit Destination Address
 ; Output: C = 0 Error, C = 1 Read OK
 ;	  A = Error Code
 ;----------------------------------------------------------------------------
 CF_RD_BLK	LDA 	#$01
 		STA 	CFREG2			; Read one Sector
+		LDA 	#$20			; Read Sector Command
+		STA 	CFREG7			; CF command register
 		JSR 	CFWAIT			; Wait until CF-card ready
 		BCC 	CF_RD_END		; branch on error
 
-		LDA 	#$20			; Read Sector Command
-		STA 	CFREG7			; CF command register
 CF_RD_INFO	LDX	#$01			; initialize page counter
 		LDY	#$00			; initialize byte counter
 CF_RD_BLK0	JSR	CFWAIT			; Wait until CF-card ready
 		BCC	CF_RD_END		; Exit on CF-card error
-
-		LDA 	CFREG7			; CF status register
-		AND 	#$08			; Filter out DRQ
-		BEQ 	CF_RD_END		; branch if DRQ is no longer set
 
 		LDA 	CFREG0			; read data-bytes
 		STA 	(BLKBUF),Y		; store in buffer
@@ -196,9 +193,7 @@ CF_RD_BLK0	JSR	CFWAIT			; Wait until CF-card ready
 		BPL	CF_RD_BLK0		; two pages read? no, read next byte
 		
 		SEC				; yes, all data read, set C = 1 (no error)
-		RTS
-CF_RD_END	CLC				; C=0 (error), DRQ reset should not happen
-		RTS
+CF_RD_END	RTS				; C=0 (error), C=1 (ok)
 
 ;----------------------------------------------------------------------------
 ; Command: None, Write Single Data Block from Std. Block Buffer
@@ -217,7 +212,7 @@ CF_WR_BLK_BUF	JSR	INIT_BLKBUF		; set pointer to block buffer
 ;	   A = Error Code
 ;----------------------------------------------------------------------------
 CF_WR_LBLK_BUF	JSR	INIT_BLKBUF		; set pointer to block buffer
-						; fall through to CR_WR_LBLK
+						; fall through to CF_WR_LBLK
 
 ;----------------------------------------------------------------------------
 ; Command: CMD_WRITE, Write Single Data Block to Logical Address
@@ -226,31 +221,28 @@ CF_WR_LBLK_BUF	JSR	INIT_BLKBUF		; set pointer to block buffer
 ; Output : C = 0 Error, C = 1 Data OK
 ;	   A = Error Code
 ;----------------------------------------------------------------------------
-CF_WR_LBLK	JSR	LOAD_LBA_CF		; Load LBA into CF-card
+CF_WR_LBLK	JSR	CFWAIT			; Wait until CF-card ready
+		BCC	CF_WR_END		; Branch on error
+		JSR	LOAD_LBA_CF		; Load LBA into CF-card
 						; fall through to CF_WR_BLK
 
 ;----------------------------------------------------------------------------
 ; Write Single Data Block
-; Input:  X,Y = Ptr[LO:HI] to 32 Bit LBA Destination Address
-;	  BLKBUF,BLKBUFH = 16 Bit Source Address
+; Input:  BLKBUF,BLKBUFH = 16 Bit Source Address
 ; Output: C = 0 Error, C = 1 Write OK
 ;	  A = Error Code
 ;----------------------------------------------------------------------------
 CF_WR_BLK	LDA 	#$01
 		STA 	CFREG2			; Read one Sector
+		LDA 	#$30			; Write Sector Command
+		STA 	CFREG7			; CF command register
 		JSR 	CFWAIT			; Wait until CF-card ready
 		BCC 	CF_WR_END		; branch on error
 
-		LDA 	#$30			; Write Sector Command
-		STA 	CFREG7			; CF command register
 CF_WR_INFO	LDX	#$01			; initialize page counter
 		LDY	#$00			; initialize byte counter
 CF_WR_BLK0	JSR	CFWAIT			; Wait until CF-card ready
 		BCC	CF_WR_END		; Exit on CF-card error
-
-		LDA 	CFREG7			; CF status register
-		AND 	#$08			; Filter out DRQ
-		BEQ 	CF_WR_END		; branch if DRQ is no longer set
 
 		LDA 	(BLKBUF),Y		; read from buffer
 		STA 	CFREG0			; Write to CF-card
@@ -262,10 +254,7 @@ CF_WR_BLK0	JSR	CFWAIT			; Wait until CF-card ready
 		BPL	CF_WR_BLK0		; two pages read? no, read next byte
 		
 		SEC				; yes, all data read, set C = 1 (no error)
-		RTS
-		
-CF_WR_END	CLC				; C=0 (error), DRQ reset should not happen
-		RTS
+CF_WR_END	RTS				; C=0 (error), C=1 (ok)
 
 ;----------------------------------------------------------------------------
 ; Text-strings needed for Printing
@@ -273,6 +262,8 @@ CF_WR_END	CLC				; C=0 (error), DRQ reset should not happen
 TXT_SER		.by        '   Serial: ' $00
 TXT_FW		.by     CR ' Firmware: ' $00
 TXT_MOD		.by     CR '    Model: ' $00
+
+		ORG	$FD53		; maintain compatibility
 
 ;----------------------------------------------------------------------------
 ; This function enables a RAM-bank at $4000-$7FFF.
@@ -329,16 +320,16 @@ MON2RAM		LDA	MMU		; MMU-register
 ; This routine disables the BASIC ROM and enables the RAM behind it.
 ;----------------------------------------------------------------------------------		
 BAS2RAM		LDA	MMU			; MMU register		
-		AND 	#~BAS_EN		; Set bit to 0, disable BASIC		   
-		STA 	MMU	   		; disable BIOS ROM, enable RAM behind it
+		AND 	#~BAS_EN		; Set bit to 0, disable BASIC ROM
+		STA 	MMU	   		; disable BASIC ROM, enable RAM behind it
 		RTS				; return
 
 ;----------------------------------------------------------------------------------		
 ; This routine enables the BASIC ROM and disables the RAM behind it.
 ;----------------------------------------------------------------------------------		
 BAS2ROM		LDA	MMU			; MMU register		
-		ORA 	#BAS_EN			; Set bit to 0, disable BASIC		   
-		STA 	MMU	   		; disable BIOS ROM, enable RAM behind it
+		ORA 	#BAS_EN			; Set bit to 1, enable BASIC ROM		   
+		STA 	MMU	   		; enable BASIC ROM, disable RAM behind it
 		RTS				; return
 
 ;----------------------------------------------------------------------------

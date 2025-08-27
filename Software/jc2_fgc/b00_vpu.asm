@@ -12,28 +12,28 @@ FGC_REGISTERS	.byte	$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF  ; 16 bytes reserved space
  	        
 FGC_INFO        JMP     $0300
 
-FGC_SET_PAGE    STA     PIA_PORTC       ; switch ROM page and call code
+FGC_SET_PAGE    STA     PPI_PORTC       ; switch ROM page and call code
                 RTS
                 
 FGC_FDC_CMD     PHA                     ; save Accumulator
                 LDA     #$02
-                STA     PIA_PORTC       ; switch to ROM page 2. Code continues in page 2
+                STA     PPI_PORTC       ; switch to ROM page 2. Code continues in page 2
                 NOP                     ; place holder nops
                 NOP
                 
 FGC_VPU_CMD     PHA                     ; save Accumulator
                 LDA     #$01
-                STA     PIA_PORTC       ; switch to ROM page 1. Code continues in page 1
+                STA     PPI_PORTC       ; switch to ROM page 1. Code continues in page 1
                 NOP                     ; place holder nops
                 NOP
                 
 FGC_VPU_OUT     PHA                     ; save Accumulator
                 LDA     #$00
-                STA     PIA_PORTC       ; switch to ROM page 0
+                STA     PPI_PORTC       ; switch to ROM page 0
                 BEQ     VPU_OUT         ; branch to VPU output routine
                 
 _BLINK_HANDLER_ LDA     #$00
-                STA     PIA_PORTC       ; switch to ROM page 0
+                STA     PPI_PORTC       ; switch to ROM page 0
                 
 ; **** DRIVER START ************************************************************
 
@@ -43,8 +43,8 @@ _BLINK_HANDLER_ LDA     #$00
                 
                 LDA     TICKCNT
                 BNE     NO_HANDLER
-                STX     XREG
-                STY     YREG
+                STX     FGC_XREG
+                STY     FGC_YREG
                 LDA     CURSOR_TICKS
                 STA     TICKCNT
                 JSR     VPU_XY_TO_ADR
@@ -57,8 +57,8 @@ _BLINK_HANDLER_ LDA     #$00
                 JSR     VPU_TEXT_WR_ADR
                 PLA
                 STA     CURSOR
-HNDLR0          LDX     XREG
-                LDY     YREG
+HNDLR0          LDX     FGC_XREG
+                LDY     FGC_YREG
                 CLC
 NO_HANDLER      RTS
 ;
@@ -76,8 +76,8 @@ VPU_OUT         LDA     VPUMODE
                 
 VPU_OUT2        PLA                     ; get character to print on screen
                 PHA
-                STX     XREG            ; save X register
-                STY     YREG            ; save Y register
+                STX     FGC_XREG        ; save X register
+                STY     FGC_YREG        ; save Y register
                 CMP     #SPC            ; is it a control character?
                 BCS     VPU_CHAR        ; no, handle printable chars
 VPU_CR          CMP     #CR             ; Carriage Return char?
@@ -147,8 +147,8 @@ VPU_CURR_ADR    JSR     VPU_XY_TO_ADR   ; calculate VRAM address from cursor x-y
 VPU_OUT_END     LDX     #CRSR           ; load cursor character
                 STX     TICKCNT         ; set tick counter to 1
                 STX     CURSOR          ; set character at cursor position to cursor char
-                LDX     XREG            ; restore x register
-                LDY     YREG            ; restore y register
+                LDX     FGC_XREG        ; restore x register
+                LDY     FGC_YREG        ; restore y register
                 PLA
                 RTS
 
@@ -206,8 +206,8 @@ VPU_SCROLL      LDA     PAGECNT
                 STY     BUFFSIZE
                 LDX     MAX_X
                 LDY     #$00
-VPU_SCRL_LOOP   STX     ADRL
-                STY     ADRH
+VPU_SCRL_LOOP   STX     FGC_ADRL
+                STY     FGC_ADRH
                 LDA     #$00
                 JSR     VPU_SET_RD_ADR
                 LDX     BUFFSIZE
@@ -216,10 +216,10 @@ VPU_RD_CHAR0    LDA     VPU_PORT0
                 DEX
                 BNE     VPU_RD_CHAR0
                 SEC
-                LDA     ADRL
+                LDA     FGC_ADRL
                 SBC     MAX_X
                 TAX
-                LDA     ADRH
+                LDA     FGC_ADRH
                 SBC     #$00
                 TAY
                 LDA     #$00
@@ -231,10 +231,10 @@ VPU_WR_CHAR0    LDA     RBUFF,X
                 BNE     VPU_WR_CHAR0
                 CLC
                 LDA     #240
-                ADC     ADRL
+                ADC     FGC_ADRL
                 TAX
                 LDA     #$00
-                ADC     ADRH
+                ADC     FGC_ADRH
                 TAY
                 DEC     VARSAV
                 BEQ     VPU_SCRL_END
@@ -282,8 +282,8 @@ VPU_ADR_START_H .byte	$00,$00,$00,$00,$01,$01,$01,$02,$02,$02,$03,$03
                 
 ; ******************************************************************************
                 
-VPU_SET_STR     ;STX     ADRL
-                ;STY     ADRH
+VPU_SET_STR     ;STX     FGC_ADRL
+                ;STY     FGC_ADRH
                 
                 RTS
 

@@ -1,9 +1,7 @@
 ; ******************************************************************************
 ; Junior Computer ][ BIOS Version 1.2.0 by Joerg Walke
 ;
-; first implementation 28.12.2021
-; updated 16.11.2024 by Joerg Walke
-;
+; first implementation 28.12.2021, updated 16.11.2024 by Joerg Walke
 ; Assembled With A65
 ;
 ; 20.03.2023 A bug in the disassembler code was fixed by the German Classic 
@@ -31,7 +29,7 @@ SWITCH_TO_RAM	JSR	BAS2RAM		; Set MMU bit 7 to 0, enable BASIC RAM
 ; ******************************************************************************
 SWITCH_TO_ROM	JSR	BAS2ROM		; Set MMU bit 7 to 1, enable BASIC ROM
 SWITCH		NOP			; maintain compatibility with v1.1.4
-		RTS
+_NO_HANDLER_	RTS
 
 ; **** Set Standard In/Out Routine ID ******************************************
 ; Input: A - ID Of Standard IO Device
@@ -237,7 +235,7 @@ GETDIG0		ADC	DIG0		; add digit counter 0 to remainder in A
 ; **** Print Tab Routine *******************************************************
 ; Input: A - number of space characters to print
 ; ******************************************************************************
-TAB		STA  	TEMP
+PRTAB		STA  	TEMP
 		LDA  	#SPC		; load SPC char
 PRINTTAB	JSR  	COUT		; write SPC
 		DEC   	TEMP
@@ -1176,7 +1174,7 @@ SETBAUDRATE     STA  	CTRL_REG	; set detected baud rate
 MAIN		JSR	CGET		; clear input buffer
 		JSR  	CLRLOADSTR    	; clear screen and load pointer to string table
 		LDA  	#$1F
-		JSR  	TAB		; send some space chars to center title
+		JSR  	PRTAB		; send some space chars to center title
         	LDY  	#TITLE-STRINGP 	; load title string
 		JSR  	WRSTR		; and write it
 		JSR     INIT_CFC	; init. CFC-driver
@@ -1214,7 +1212,7 @@ NO_BOOT_DEV     LDA	IOBASEH		; language card available?
 		LDY	#SPACE-STRINGP
 		JSR	WRSTR		; write spacer lines
 		LDA	#$1E		; send some space chars to center menu
-		JSR  	TAB
+		JSR  	PRTAB
 		LDY	#MENU-STRINGP   ; load menu string
 		JSR	WRSTR		; and write it
 		LDX	#< LANGNAME	; load language name
@@ -1382,7 +1380,7 @@ MONITOR 	JSR  	CLRLOADSTR    	; clear screen and load pointer to string table
         	JSR  	WRSTR		; show monitor title
 MONRESET	JSR	SETPPORTIN	; initialize RIOT
 MONINP		JSR  	CROUT
-		LDA  	#PROMPT
+		LDA  	#MON_PROMPT
 		JSR  	COUT		; show monitor prompt
 		JSR  	STRIN      	; read input string
 		LDY  	#$00       	; reset string index
@@ -1508,7 +1506,7 @@ PRASCII         STY  	YSAV       	; store Y
 		CPY  	#9		; more than 8 bytes viewed?
 		BCS  	NOADJUST	; no
 		ADC  	#1		; yes, adjust by one char for block divider
-NOADJUST	JSR  	TAB		; print tab spaces
+NOADJUST	JSR  	PRTAB		; print tab spaces
 
 		LDY  	#$00
 NEXTASC		LDA  	(ASCL),Y   	; get data from address
@@ -1678,7 +1676,7 @@ NEXTSHIFT       ASL   	ASCL           	; MSBit of ASCL in C
 		DEX
 		BNE     NEXTMCHR	; more chars to decode?
 		LDA	#$02		; print two space chars
-		JSR	TAB
+		JSR	PRTAB
 
 ; decode address mode and print left part of mode string ('#', '(' or 'A')
 
@@ -1784,7 +1782,7 @@ NEXTBYTE	JSR	SPCOUT		; print leading space char
 CALCTAB		SBC	#$03		; reduce tab space by 3 for every data byte
 		DEY
 		BNE	CALCTAB		; all data bytes considered?
-		JMP	TAB
+		JMP	PRTAB
 
 ; Address Mode Decode Tables ***************************************************
 
@@ -3353,11 +3351,11 @@ LOAD_PART0      LDX     #$08                    ; for partition 0 the table inde
                 BEQ     SYS_MSG_ERR             ; if $00 then exit
 LOAD_PART       LDY     #$08
 SD_BOOT1        LDA     PART0_RS,X              ; load partition start and length
-                STA     BOOT_PART,Y             ; and save it to boot device descriptor
+                STA     BOOT_PART,Y           	; and save it to boot device descriptor
                 DEX
                 DEY
                 BPL     SD_BOOT1
-                LDX	#< BOOT_PART            ; read partition boot blk ptr
+                LDX	#< BOOT_PART          	; read partition boot blk ptr
 		LDY	#> BOOT_PART
 		JSR     SYS_LD_BOOTBLK          ; load partition boot block
                 BCC     LRP_END                 ; block not found. Exit

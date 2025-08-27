@@ -128,7 +128,7 @@ PR_PATH_DN      RTS				; return
 PRINT_PROMPT    JSR     CROUT		   ; CR
                 JSR     PRINT_DRIVE	   ; e.g. 'C:'
                 JSR     PRINT_PATH	   ; '\'
-                LDA     #PROMPT		   ; '>'
+                LDA     #DOS_PROMPT	   ; '>'
                 JMP     COUT		   ; print char and return
                 
 ; **** Print Drive Label *******************************************************
@@ -136,9 +136,9 @@ PRINT_PROMPT    JSR     CROUT		   ; CR
 ; ******************************************************************************
 PRINT_LABEL     PHA			   ; save A
                 PHY			   ; save Y
-                PRSTR   MSG_LABEL	   ; 'Volume in drive '
+                PRSTRM  MSG_LABEL	   ; 'Volume in drive '
                 JSR     PRINT_DRIVE	   ; e.g. 'C'
-                PRSTR   MSG_LABEL2	   ; ' is '
+                PRSTRM  MSG_LABEL2	   ; ' is '
                 JSR     PRINT_FILENAME1    ; print volume-label
                 JSR     CROUT		   ; CR 2x
                 JSR     CROUT
@@ -169,7 +169,7 @@ PRINT_NEXT_CHAR LDA     (CURR_DIR_ENTRY),Y  		; load next character
 PRINT_FILE_INFO AND.EQ	F_ATTRIBS #FA_DIRECTORY PRINT_SIZE	; branch if F_ATTRIBS & FA_DIRECTORY = 0 (not a dir.)
                 
 ; Print Directory Attribute ****************************************************
-                PRSTR   MSG_DIR_ENTRY	    ; print <DIR>
+                PRSTRM  MSG_DIR_ENTRY	    ; print <DIR>
 		INW	CURR_DIR_CNT	    ; increment total dir count
 		JMP     PRINT_ATTRIB
 
@@ -616,21 +616,21 @@ PRINT_RESULT    JSR     CROUT			; Print CR
 ; Print Total File Count
                 LDXY	CURR_FILE_CNT		; [X,Y] = Current nr of files
                 JSR     PRINT_INT16		; print as word
-                PRSTR   MSG_FILE_COUNT		; print 'file(s) '
+                PRSTRM  MSG_FILE_COUNT		; print 'file(s) '
 
 ; Print Total Used Bytes In Directory
                 LDXYI   CURR_USED_SIZE		; Total filesize
                 JSR     LOAD_32			; NUM32 = total filesize
                 JSR     PRINT_INT32		; print as int32
-                PRSTR   MSG_BYTE_USED		; print ' bytes'
+                PRSTRM  MSG_BYTE_USED		; print ' bytes'
 
 ; Print Total Directory Count
 		LDXY	CURR_DIR_CNT		; nr of directories
                 JSR     PRINT_INT16		; Print as word
-                PRSTR   MSG_DIR_COUNT		; print ' dir(s)'
+                PRSTRM  MSG_DIR_COUNT		; print ' dir(s)'
 		MVAX	4 FREE_KB NUM32		; NUM32 = #Free KB
 		JSR	PRINT_INT32		; Print as decimal number
-		PRSTR	TXT_KB			; Print ' KB free'
+		PRSTRM	TXT_KB			; Print ' KB free'
 		RTS				; return
 		
 ; **** Create Directory (MKDIR) Command ****************************************
@@ -867,9 +867,9 @@ SH_DEL_FILE	LDY	#D_FILENAME
 		LDA	DBG_PRINT				; 1 = Print debug info
 		BEQ	SH_DEL_NO_DBG				; branch if no debug
 
-		PRSTR	TXT_SH_DEL1
+		PRSTRM	TXT_SH_DEL1
 		PRHEX16	CURR_DIR_BLK
-		PRSTR	TXT_SH_DEL2
+		PRSTRM	TXT_SH_DEL2
 		PRHEX32	CURR_CLUSTER
 		JSR	CROUT
 SH_DEL_NO_DBG	LDXYI	CURR_DIR_BLK				; CURR_DIR_BLK is LBA of current dir block
@@ -898,7 +898,7 @@ SH_CLS          JMP     CLRSCRN
 ; Output: A - pressed key char
 ;         C = 0 ESC key pressed, C = 1 else
 ; ******************************************************************************
-SH_PAUSE        PRSTR   MSG_PAUSE          	; print pause message
+SH_PAUSE        PRSTRM  MSG_PAUSE          	; print pause message
                 JSR     CIN                  	; wait until any key pressed
                 PHA
                 JSR     CROUT
@@ -1018,7 +1018,7 @@ DOS_JMP_RET	JSR	RAMB_DOS		; Enable main RAM-BANK for DOS
 ; Called with a CMD_LOAD from the CFC Device-driver through a JMP (CF_LOAD_VEC).
 ; ******************************************************************************
 CFC_LOAD	JSR	RAMB_DOS		; Enable main RAM-BANK for DOS
-		PRSTR	TXT_LOAD		; Print 'CFC_LOAD'
+		PRSTRM	TXT_LOAD		; Print 'CFC_LOAD'
 		JSR	FNAME2FN83		; Convert filename to FN83 filename
 		;PRCH	'['
 		;LDXYI	FILENAME		; 
@@ -1261,7 +1261,7 @@ CHK_LBA_LP	LDA.NE	(SAVEX),Y CHK_LBA_OK	; Branch if LBA >= $20
 		LDA	(SAVEX),Y		; LBA LSB
 		CMP.CS	#$20 CHK_LBA_X		; Branch if LBA LSB >= $20
 
-		PRSTR	TXT_LBA_ERR
+		PRSTRM	TXT_LBA_ERR
 		JSR	STACK_DUMP		; Print stack-dump
 		CLC
 		BCC	CHK_LBA_X		; Branch always
@@ -1289,7 +1289,7 @@ STRACE		LDA	$100,X			; stack trace
 ; **** CFC_SAVE routine for CF-IDE driver **************************************
 ; Called from CFC_SAVE which is located in Monitor RAM.
 ; ******************************************************************************
-CFC_SAVE_CNT	PRSTR	TXT_SAVE		; Print 'CFC_SAVE'
+CFC_SAVE_CNT	PRSTRM	TXT_SAVE		; Print 'CFC_SAVE'
 		PRHEX16	$2000			; Print end-address
 		JSR	SPCOUT		
 		JSR	FNAME2FN83		; Convert filename to FN83 filename
@@ -1304,20 +1304,20 @@ CFC_SAVE_CNT	PRSTR	TXT_SAVE		; Print 'CFC_SAVE'
 		LDA.EQ	SAVE_LEN NO_ADD_SEC	; branch if LSB of SAVE_LEN is 0
 
 		INC	SAVE_SECS		; Add 1 to SAVE_SECS if LSB of SAVE_LEN is not 0
-NO_ADD_SEC	PRSTR	TXT_SECND1		; Print ', size: '
+NO_ADD_SEC	PRSTRM	TXT_SECND1		; Print ', size: '
 		LDXY	SAVE_LEN		; Size in bytes
 		JSR	PRINT_INT16		; Print it
-		PRSTR	TXT_SECND2		; Print ', sec: '
+		PRSTRM	TXT_SECND2		; Print ', sec: '
 		LDA	SAVE_SECS		; Get sector count
 		JSR	NUMOUT			; Print #sectors needed
 		JSR	CROUT			; Print CR
 		
-		PRSTR	TXT_OS_CREATE		; Print 'OS_CREATE'
+		PRSTRM	TXT_OS_CREATE		; Print 'OS_CREATE'
 		LDA	#FA_ARCHIVE		; File is modified 
 		JSR	OS_CREATE		; Create file in current dir. and update FAT
 		BCC	SV_CNT_X		; Branch (exit) on error
 		
-		PRSTR	TXT_OS_SAVFILE		; Print 'OS_SAVE_FILE'
+		PRSTRM	TXT_OS_SAVFILE		; Print 'OS_SAVE_FILE'
 		JSR	OS_SAVE_FILE		; Save contents of file
 		BCC	SV_CNT_X		; Branch if error
 		
@@ -1402,7 +1402,7 @@ SH_RUN_END      JMP     LOAD_ACT_DIR        	; restore actual directory LBA and 
 ; **** Print version info  *****************************************************
 ; Output: -
 ; ******************************************************************************
-SH_VER		PRSTR	MSG_BOOT			; Print Title Info
+SH_VER		PRSTRM	MSG_BOOT			; Print Title Info
 		RTS
 		
 ; **** List a file *************************************************************
@@ -1422,7 +1422,7 @@ SH_LIST_END     JSR     LOAD_ACT_DIR        	; restore actual directory LBA
 
 
 ; **** Monitor call-back Routine ************************************************
-SH_MONITOR      PRSTR   MSG_MONITOR
+SH_MONITOR      PRSTRM   MSG_MONITOR
                 JMP     MON_WARM_START
                 
 .macro	PR_ERR	msg
@@ -1480,7 +1480,7 @@ GET_SIS		JSR	INIT_SIS_BUF			; Init SIS Buffer for CMD_READ command
 		JSR 	DEV_RD_LBLK           		; Read SIS sector
 		LDA	DBG_PRINT
 		BEQ	FREE_KB_UPDATE
-		PRSTR	TXT_FFREE_CLST			; print 'First Free Cluster:$'
+		PRSTRM	TXT_FFREE_CLST			; print 'First Free Cluster:$'
 		PRHEX32	SIS_BUFF+$01EC
 		JSR	CROUT
 FREE_KB_UPDATE	MVAX	4 SIS_BUFF+$01E8 FREE_KB	
@@ -1494,7 +1494,7 @@ TXT_KB		.by	' KB free' CR $00
 SIS_CNT		.byte	$00				; SIS counter, counts #clusters freed or allocated
 
 ; Write Info back to System Information Sector **************************************
-SIS_ADD		PRSTR	SISP
+SIS_ADD		PRSTRM	SISP
 		ADB	SIS_BUFF+$01E8 SIS_CNT		; add SIS_CNT to #free clusters in SIS-buffer
 		SCC					; 'skip if C is clear' macro
 		INC	SIS_BUFF+$01E9
@@ -1513,7 +1513,7 @@ SIS_WRITE	LDA	SIS_CNT				; Print SIS_CNT
 		JSR	MON_RAM_BLOCK.OWN_WR_LBLK
 		JMP	FREE_KB_UPDATE			; Update FREE_KB and return
 
-SIS_DEL		PRSTR	SISM
+SIS_DEL		PRSTRM	SISM
 		SBB	SIS_BUFF+$01E8 SIS_CNT		; subtract SIS_CNT from #free clusters in SIS-buffer
 		SCS					; 'skip if C is set' macro
 		DEC	SIS_BUFF+$01E9

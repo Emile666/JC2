@@ -1,5 +1,6 @@
 ; ------------------------------------------------------------------------------
-; Floppy/Graphics-Controller BIOS for the Junior Computer ][, by Joerg Walke.
+; Floppy/Graphics-Controller BIOS V0.2.2 for the Junior Computer ][, by Emile
+; V0.2.0 by Joerg Walke.
 ;
 ; EPROM code is divided into 16 pages of 1K, called BANK 00..31. The lower 16K
 ; of the FGC - BANK 00..BANK 15 - are mirrored to the higher 16K - BANK 16..BANK 31.
@@ -24,17 +25,26 @@
 ; FGC_INIT_ROM : BANK 15   $3C00-$3FFF
 ;                BANK 31   $7C00-$7FFF  (Mirror)
 ; ------------------------------------------------------------------------------
+VERMAIN   	EQU     '0'    			; FGC main version
+VERPSUB    	EQU     '2'    			; FGC primary sub version
+VERSSUB		EQU	'2'			; FGC secondary sub version
 
 ; List Of Changes **************************************************************
 ; V0.2  : Original version from Joerg Walke, May 14th, 2025
 ; V0.2.1: Adapted for MADS by Emile, eprom binary is now identical to Joerg's version ($0000-$3FFF)
+; V0.2.2: source include files reorganised, one system wide definition of ZP vars
 ; ******************************************************************************
 		OPT h- ; do not add file header
 		OPT f+ ; save as single block
 
-		ICL "macros.inc"		; boot.sys macro definitions for MADS
-		ICL "fgc_defines.inc"		; boot.sys defines
+		ICL "jc2_macros.inc"		; JC2 macro definitions for MADS
+		ICL "jc2_defines.inc"		; JC2 system-defines
+		ICL "jc2_constants.inc"		; JC2 constants
+		ICL "jc2_bios_calls.inc"	; JC2 BIOS routines
 		
+PROG_START	EQU	$0200	      		; Program Start Address in RAM
+PS2NO_KBD       EQU     $06           		; No keyboard selected
+
 ; ------------------------------------------------------------------------------
 ; EPROM Code Size is from $0000 - $3FFF (lowest 16 KB) and from
 ; $4000 - $7FFF for the highest 16 KB. Every 1 KB page is assembed to 

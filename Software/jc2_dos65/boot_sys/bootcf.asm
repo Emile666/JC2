@@ -1,7 +1,7 @@
 ; ******************************************************************************
 ; The Disk Operating System for 6502 Microprocessors
 ;
-; JC2 DOS65, Version 0.3.1 by Emile, original design (V0.2.0) by Joerg Walke
+; JC2 DOS65, Version 0.3.2 by Emile, original design (V0.2.0) by Joerg Walke
 ;
 ; Developed for the Junior Computer ][
 ;
@@ -21,7 +21,7 @@
 
 VERMAIN   	EQU     '0'    		; main version
 VERPSUB    	EQU     '3'    		; primary sub version
-VERSSUB		EQU	'1'		; secondary sub version
+VERSSUB		EQU	'2'		; secondary sub version
 
 ; List Of Changes **************************************************************
 ; V0.2.1: 11-04-25 Emile boot.asm renamed in bootcf.asm and adapted for CF-IDE interface.
@@ -46,6 +46,7 @@ VERSSUB		EQU	'1'		; secondary sub version
 ;         - CF device-driver routines now in Monitor RAM
 ; V0.3.1: - Bug-fix mkdir buffer not cleared.
 ;         - Bug-fix update_fat_table, link_fat_entry and read_fat_entry
+; V0.3.2: - .inc files reorganised.
 ; ******************************************************************************
 		OPT h- ; do not add file header
 		OPT f+ ; save as single block
@@ -66,8 +67,10 @@ VERSSUB		EQU	'1'		; secondary sub version
 ; root_dir_first_cluster: D_START_DIR, this is usually 2
 ; lba_addr = cluster_begin_lba + (cluster_nr - 2) * sectors_per_cluster
 ;------------------------------------------------------------------------------------------------
-		ICL "macros.inc"		; boot.sys macro definitions for MADS
-		ICL "defines.inc"		; boot.sys defines
+		ICL "jc2_defines.inc"		; JC2 system-wide defines
+		ICL "jc2_constants.inc"		; JC2 constants
+		ICL "jc2_macros.inc"		; JC2 macro definitions for MADS
+		ICL "jc2_bios_calls.inc"	; JC2 BIOS routines
 		
 .if	USE_XMODEM = 1
 	.word	PROG_START			; Needed for XMODEM lm command loading .bin files
@@ -93,4 +96,7 @@ BLOCK_2
 BOOT_SYS_END    BRK
 		ORG ((*/256)+1)*256		; next free page
 SIS_BUFF	.ds 	512			; SIS Buffer 
+
+SIS_OFFSET	EQU	SIS_BUFF+$30		; 2-bytes: System Information Sector Offset
+
 		END

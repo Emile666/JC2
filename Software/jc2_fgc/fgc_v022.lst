@@ -1,0 +1,3129 @@
+mads 2.1.7 build 33 (1 Aug 24)
+Source: fgc_main.asm
+     1 				; ------------------------------------------------------------------------------
+     2 				; Floppy/Graphics-Controller BIOS V0.2.2 for the Junior Computer ][, by Emile
+     3 				; V0.2.0 by Joerg Walke.
+     4 				;
+     5 				; EPROM code is divided into 16 pages of 1K, called BANK 00..31. The lower 16K
+     6 				; of the FGC - BANK 00..BANK 15 - are mirrored to the higher 16K - BANK 16..BANK 31.
+     7 				; JP4 now selects which 16 KB ROM area will be used:
+     8 				; 1-2 (27C256) = lower 16 KB ROM area, 2-3 (28C256) = higher 16 KB ROM area
+     9 				;
+    10 				; FGC_VPU      : BANK 00   $0000-$03FF
+    11 				;                BANK 16   $4000-$43FF (Mirror)
+    12 				;
+    13 				; FGC_VPU_CMD  : BANK 01   $0400-$07FF
+    14 				;                BANK 17   $4400-$47FF (Mirror)
+    15 				;                
+    16 				; FGC_FLOPPY     BANK 02 - 03	$0800-$0FFF (not yet implemented)
+    17 				; FGC_FLOPPY     BANK 18 - 19	$4800-$4CFF (Mirror)
+    18 				;
+    19 				; FGC_CHAR_ROM : BANK 04 - 07	$1000-$1FFF
+    20 				;                BANK 20 - 23	$5000-$5FFF  (Mirror)
+    21 				;               
+    22 				; EMPTY          BANK 08..14
+    23 				; EMPTY          BANK 24..30
+    24 				;
+    25 				; FGC_INIT_ROM : BANK 15   $3C00-$3FFF
+    26 				;                BANK 31   $7C00-$7FFF  (Mirror)
+    27 				; ------------------------------------------------------------------------------
+    28 = 0030			VERMAIN   	EQU     '0'    			; FGC main version
+    29 = 0032			VERPSUB    	EQU     '2'    			; FGC primary sub version
+    30 = 0032			VERSSUB		EQU	'2'			; FGC secondary sub version
+    31
+    32 				; List Of Changes **************************************************************
+    33 				; V0.2  : Original version from Joerg Walke, May 14th, 2025
+    34 				; V0.2.1: Adapted for MADS by Emile, eprom binary is now identical to Joerg's version ($0000-$3FFF)
+    35 				; V0.2.2: source include files reorganised, one system wide definition of ZP vars
+    36 				; ******************************************************************************
+    37 						OPT h- ; do not add file header
+    38 						OPT f+ ; save as single block
+    39
+    40 						ICL "jc2_macros.inc"		; JC2 macro definitions for MADS
+Source: jc2_macros.inc
+     1 				;-------------------------------------------------
+     2 				; Macro-definitions for BOOT.SYS file.
+     3 				; Assembler: MADS-Assembler
+     4 				; V0.1: 22-05-25, Emile first version
+     5 				;-------------------------------------------------
+     6
+     7 				.macro	PRHEX16	b16				; Print WORD (16-bit) as 2 hex-bytes
+     8 					LDA	:b16+1				; print MSB
+     9 					JSR	HEXOUT
+    10 					LDA	:b16
+    11 					JSR	HEXOUT				; print LSB
+    12 				.endm
+    13
+    14 				.macro	PRHEX32	b32				; Print DWORD (32-bit) as 4 hex-bytes
+    15 					PRHEX16	:b32+2				; Print MSB word first
+    16 					PRHEX16	:b32				; Print LSB word
+    17 				.endm
+    18
+    19 				.macro	LDXYI	b16
+    20 					LDX	<:b16				; MADS makes this immediate
+    21 					LDY	>:b16
+    22 				.endm
+    23
+    24 				.macro	LDXY	b16				; Load [X,Y] Pointer
+    25 					LDX	:b16
+    26 					LDY	:b16+1
+    27 				.endm
+    28
+    29 				.macro	STXY	b16				; Store [X,Y] Pointer
+    30 					STX	:b16
+    31 					STY	:b16+1
+    32 				.endm
+    33
+    34 				.macro	PRSTRM	str				; Print String
+    35 					LDXYI	:str
+    36 					JSR	OS_STRING_OUT
+    37 				.endm
+    38
+    39 				.macro	PRCH	ch				; Print single character
+    40 					LDA	#:ch
+    41 					JSR	COUT
+    42 				.endm
+    43 					
+    44 				.macro	ASL32	b32				; ASL of 32-bit DWORD
+    45 					ASL     :b32		  		; SHL with C=0
+    46 				        ROL     :b32+1		  
+    47 				        ROL     :b32+2
+    48 				        ROL     :b32+3		  
+    49 				.endm
+    50
+    51 				.macro	LSR32	b32				; LSR of 32-bit DWORD
+    52 					LSR     :b32+3		  		; SHR with C=0
+    53 				        ROR     :b32+2
+    54 				        ROR     :b32+1
+    55 				        ROR     :b32
+    56 				.endm
+    57
+    58 				.macro	LSR16	b16				; LSR of 16-bit WORD
+    59 					LSR	:b16+1
+    60 					ROR	:b16
+    61 				.endm
+    62
+    63 				.macro	PHW	b16				; Push WORD onto stack
+    64 					LDA	:b16
+    65 					PHA
+    66 					LDA	:b16+1
+    67 					PHA
+    68 				.endm
+    69
+    70 				.macro	PLW	b16				; Pull WORD from stack
+    71 					PLA
+    72 					STA	:b16+1
+    73 					PLA
+    74 					STA	:b16
+    75 				.endm
+    76
+    77 				.macro	PHY					; Push Y-register
+    78 					TYA
+    79 					PHA
+    80 				.endm
+    81
+    82 				.macro	PLY					; Pull Y-register
+    83 					PLA
+    84 					TAY
+    85 				.endm
+    86
+    87 				.macro	PHX					; Push X-register
+    88 					TXA
+    89 					PHA
+    90 				.endm
+    91
+    92 				.macro	PLX					; Pull X-register
+    93 					PLA
+    94 					TAX
+    95 				.endm
+    96
+    97 				.macro	MVAX	n src dst			; Move n bytes from SRC to DST using X as index
+    98 					LDX	#:n-1
+    99 				lp	MVA	:src,X :dst,X-
+   100 					BPL	lp
+   101 				.endm
+   102 					
+   103 				.macro	MVAY	n src dst			; Move n bytes from SRC to DST using Y as index
+   104 					LDY	#:n-1
+   105 				lp	MVA	:src,Y :dst,Y-
+   106 					BPL	lp
+   107 				.endm
+   108
+   109 				; Macros used for printing a cluster nr, which consists of 2 words
+   110 				.macro	PRCLB	c st				; This prints a byte and optionally saves it
+   111 						LDA	(:c),Y
+   112 					ift :0>1	; st also given?
+   113 						STA	:st
+   114 					eif	
+   115 						JSR	HEXOUT			; changes Y!
+   116 				.endm		
+   117
+   118 				.macro	PRCLW	indx	curr_dir stor		; Print a word of a cluster nr and save it (optional)
+   119 						LDY	#:indx+1		; Print MSB of word
+   120 					ift :0>2	; stor also given?	
+   121 						PRCLB	:curr_dir :stor+1
+   122 					els	
+   123 						PRCLB	:curr_dir
+   124 					eif
+   125 						LDY	#:indx			; Print LSB of word
+   126 					ift :0>2	; stor also given?	
+   127 						PRCLB	:curr_dir :stor
+   128 					els	
+   129 						PRCLB	:curr_dir
+   130 					eif
+   131 				.endm
+   132
+   133 				BTST	.macro ' '	b1 b2 lbl1		; Bit test (7-0) combined with branch if equal
+   134 					ift :b2>7
+   135 						ERT "Only bits 7-0 allowed"
+   136 					els
+   137 						LDA	:b1
+   138 						AND	#(1 << :b2)
+   139 						BEQ	:lbl1
+   140 					eif
+   141 				.endm
+   142 					
+   143 				; ----------------------------------------------
+   144 				; Compare + Branch Macros
+   145 				; ----------------------------------------------
+   146 				CMP.EQ	.macro ' '	b1 lbl			; Compare A with b1 and branch if equal
+   147 						CMP	:b1
+   148 						BEQ	:lbl
+   149 				.endm		; A is now not equal to b1
+   150 					
+   151 				CMP.NE	.macro ' '	b1 lbl			; Compare A with b1 and branch if not equal
+   152 						CMP	:b1
+   153 						BNE	:lbl
+   154 				.endm		; A is now equal to b1
+   155
+   156 					; Compare A with b1 and branch if Carry is 0 (A-b1 < 0)
+   157 				CMP.CC	.macro ' '	b1 lbl
+   158 						CMP	:b1			; 
+   159 						BCC	:lbl			; branch if C=0 (A-b1 < 0)
+   160 				.endm		; C is now 1 (A-b1 is >= 0)
+   161
+   162 					; Compare A with b1 and branch if Carry is 1 (A-b1 >= 0)
+   163 				CMP.CS	.macro ' '	b1 lbl
+   164 						CMP	:b1			; 
+   165 						BCS	:lbl			; branch if C=1 (A-b1 >= 0)
+   166 				.endm		; C is now 0 (A-b1 is < 0)
+   167
+   168 				CPX.EQ	.macro ' '	b1 lbl			; Compare X with b1 and branch if equal
+   169 						CPX	:b1
+   170 						BEQ	:lbl
+   171 				.endm		; X is now not equal to b1
+   172 					
+   173 				CPX.NE	.macro ' '	b1 lbl			; Compare X with b1 and branch if not equal
+   174 						CPX	:b1
+   175 						BNE	:lbl
+   176 				.endm		; X is now equal to b1
+   177
+   178 					; Compare X with b1 and branch if Carry is 0 (A-b1 < 0)
+   179 				CPX.CC	.macro ' '	b1 lbl
+   180 						CPX	:b1			; 
+   181 						BCC	:lbl			; branch if C=0 (X-b1 < 0)
+   182 				.endm		; C is now 1 (X-b1 is >= 0)
+   183
+   184 					; Compare X with b1 and branch if Carry is 1 (X-b1 >= 0)
+   185 				CPX.CS	.macro ' '	b1 lbl
+   186 						CPX	:b1			; 
+   187 						BCS	:lbl			; branch if C=1 (X-b1 >= 0)
+   188 				.endm		; C is now 0 (X-b1 is < 0)
+   189
+   190 				CPY.EQ	.macro ' '	b1 lbl			; Compare Y with b1 and branch if equal
+   191 						CPY	:b1
+   192 						BEQ	:lbl
+   193 				.endm		; Y is now not equal to b1
+   194 					
+   195 				CPY.NE	.macro ' '	b1 lbl			; Compare Y with b1 and branch if not equal
+   196 						CPY	:b1
+   197 						BNE	:lbl
+   198 				.endm		; Y is now equal to b1
+   199
+   200 					; Compare Y with b1 and branch if Carry is 0 (Y-b1 < 0)
+   201 				CPY.CC	.macro ' '	b1 lbl
+   202 						CPY	:b1			; 
+   203 						BCC	:lbl			; branch if C=0 (Y-b1 < 0)
+   204 				.endm		; C is now 1 (Y-b1 is >= 0)
+   205
+   206 					; Compare Y with b1 and branch if Carry is 1 (Y-b1 >= 0)
+   207 				CPY.CS	.macro ' '	b1 lbl
+   208 						CPY	:b1			; 
+   209 						BCS	:lbl			; branch if C=1 (Y-b1 >= 0)
+   210 				.endm		; C is now 0 (Y-b1 is < 0)
+   211
+   212 				; ----------------------------------------------
+   213 				; Increment/Decrement + Branch Macros
+   214 				; ----------------------------------------------
+   215 				DEC.EQ	.macro 	' '	b1 lbl			; DEC + BEQ
+   216 						DEC	:b1
+   217 						BEQ	:lbl
+   218 				.endm
+   219
+   220 				DEC.NE	.macro 	' '	b1 lbl			; DEC + BNE
+   221 						DEC	:b1
+   222 						BNE	:lbl
+   223 				.endm
+   224
+   225 				INC.EQ	.macro 	' '	b1 lbl			; INC + BEQ
+   226 						INC	:b1
+   227 						BEQ	:lbl
+   228 				.endm
+   229
+   230 				INC.NE	.macro 	' '	b1 lbl			; INC + BNE
+   231 						INC	:b1
+   232 						BNE	:lbl
+   233 				.endm
+   234
+   235 				; ----------------------------------------------
+   236 				DEX.NE	.macro 	lbl				; DEX + BNE
+   237 						DEX
+   238 						BNE	:lbl
+   239 				.endm
+   240
+   241 				DEX.EQ	.macro 	lbl				; DEX + BEQ
+   242 						DEX
+   243 						BEQ	:lbl
+   244 				.endm
+   245
+   246 				DEX.PL	.macro 	lbl				; DEX + BPL 
+   247 						DEX
+   248 						BPL	:lbl
+   249 				.endm
+   250
+   251 				DEX.MI	.macro 	lbl				; DEX + BMI
+   252 						DEX
+   253 						BMI	:lbl
+   254 				.endm
+   255
+   256 				DEX.CC	.macro 	lbl				; DEX + BCC 
+   257 						DEX
+   258 						BCC	:lbl
+   259 				.endm
+   260
+   261 				DEX.CS	.macro 	lbl				; DEX + BCS
+   262 						DEX
+   263 						BCS	:lbl
+   264 				.endm
+   265
+   266 				; ----------------------------------------------
+   267 				DEY.EQ	.macro 	lbl				; DEY + BEQ
+   268 						DEY
+   269 						BEQ	:lbl
+   270 				.endm
+   271
+   272 				DEY.NE	.macro 	lbl				; DEY + BNE
+   273 						DEY
+   274 						BNE	:lbl
+   275 				.endm
+   276
+   277 				DEY.PL	.macro 	lbl				; DEY + BPL 
+   278 						DEY
+   279 						BPL	:lbl
+   280 				.endm
+   281
+   282 				DEY.MI	.macro 	lbl				; DEY + BMI
+   283 						DEY
+   284 						BMI	:lbl
+   285 				.endm
+   286
+   287 				DEY.CC	.macro 	lbl				; DEY + BCC 
+   288 						DEY
+   289 						BCC	:lbl
+   290 				.endm
+   291
+   292 				DEY.CS	.macro 	lbl				; DEY + BCS
+   293 						DEY
+   294 						BCS	:lbl
+   295 				.endm
+   296 				; ----------------------------------------------
+   297
+   298 				; ----------------------------------------------
+   299 				; LOAD/STORE + Branch Macros
+   300 				; ----------------------------------------------
+   301 				LDA.EQ	.macro 	' '	b1 lbl			; LDA + BEQ
+   302 						LDA	:b1
+   303 						BEQ	:lbl
+   304 				.endm
+   305
+   306 				LDA.NE	.macro 	' '	b1 lbl			; LDA + BNE
+   307 						LDA	:b1
+   308 						BNE	:lbl
+   309 				.endm
+   310
+   311 				STA.EQ	.macro 	' '	b1 lbl			; STA + BEQ
+   312 						STA	:b1
+   313 						BEQ	:lbl
+   314 				.endm
+   315
+   316 				STA.NE	.macro 	' '	b1 lbl			; STA + BNE
+   317 						STA	:b1
+   318 						BNE	:lbl
+   319 				.endm
+   320
+   321 				; ----------------------------------------------
+   322 				; AND/OR + Branch Macros
+   323 				; ----------------------------------------------
+   324 				AND.EQ	.macro 	' '	p1 p2 p3		; LDA + AND + BEQ
+   325 					ift :0>2	; LDA + AND + BEQ	
+   326 						LDA	:p1
+   327 						AND	:p2
+   328 						BEQ	:p3
+   329 					els		; AND + BEQ
+   330 						AND	:p1
+   331 						BEQ	:p2
+   332 					eif
+   333 				.endm
+   334
+   335 				AND.NE	.macro 	' '	p1 p2 p3		; LDA + AND + BNE
+   336 					ift :0>2	; LDA + AND + BNE	
+   337 						LDA	:p1
+   338 						AND	:p2
+   339 						BNE	:p3
+   340 					els		; AND + BNE
+   341 						AND	:p1
+   342 						BNE	:p2
+   343 					eif
+   344 				.endm
+   345
+   346 				.macro		ADCAW			; Add A to word and store in word
+   347 						CLC
+   348 						ADC	:1
+   349 						STA	:1
+   350 						LDA	:1+1
+   351 						ADC	#0
+   352 						STA	:1+1
+   353 				.endm
+    41 						ICL "jc2_defines.inc"		; JC2 system-defines
+Source: jc2_defines.inc
+     1 				;------------------------------------------------------------------------------
+     2 				; Junior Computer ][ BIOS & Monitor ADDRESS DEFINES
+     3 				;------------------------------------------------------------------------------
+     4
+     5 				;------------------------------------------------------------------------------
+     6 				; $00 - $FF, Zero-Page Address Defines
+     7 				; - Addresses from $00 up to $9C are in use by BASIC
+     8 				; - Addresses from $A0 up to $AF are in use by DOS and boot.sys
+     9 				;------------------------------------------------------------------------------ 
+    10 = 0000			LAB_WARM	= 	$00		; BASIC warm start entry point
+    11 = 0001			Wrmjpl 		= 	LAB_WARM+1	; BASIC warm start vector jump low byte
+    12 = 0002			Wrmjph 		= 	LAB_WARM+2	; BASIC warm start vector jump high byte
+    13
+    14 = 0003			FREE1		EQU	$03		; Not in use
+    15
+    16 				; ------------------------------------------------------
+    17 				; BASIC variables: $04 to $13, see jc2_basic_zp_vars.inc
+    18 				; ------------------------------------------------------
+    19
+    20 				; Card Base Addresses **********************************************************
+    21 = 0014			IOBASE		EQU	$14		; pointer to IO card base
+    22 = 0014			IOBASEL		EQU	$14		; always $00
+    23 = 0015			IOBASEH		EQU	$15		; K2 = $08, K3 = $0C, K4 = $10
+    24 = 0016			FGCBASE	        EQU	$16		; pointer to Floppy-/Graphics-Controller card base
+    25 = 0016			FGCBASEL	EQU	$16		; always $00
+    26 = 0017			FGCBASEH	EQU	$17		; (K2 = $08, K3 = $0C,) should always be K4 = $10
+    27 = 0018			CARD3BASE	EQU	$18		; reserved (controller base)
+    28 = 0018			CARD3BASEL	EQU	$18		; always $00
+    29 = 0019			CARD3BASEH	EQU	$19		; K2 = $08, K3 = $0C, K4 = $10
+    30
+    31 				; -------------------------------------------------------
+    32 				; BASIC variables: $1A to $97, see jc2_basic_zp_vars.inc
+    33 				; -------------------------------------------------------
+    34 						ICL "jc2_basic_zp_vars.inc"	; JC2 BASIC variables
+Source: jc2_basic_zp_vars.inc
+     1 				;-------------------------------------------------
+     2 				; JC2 BASIC Zero-Page variables.
+     3 				; Assembler: MADS-Assembler
+     4 				;-------------------------------------------------
+     5
+     6 = 0004			Decss			= $04		; BASIC number to decimal string start LSB (moved from $EF)
+     7 = 0005			Decssp1			= $05		; BASIC number to decimal string start MSB (moved from $F0)
+     8 									; $06..$09 also reserved for Decss
+     9 									
+    10 = 000A			Usrjmp			= $0A		; USR function JMP address
+    11 = 000B			Usrjpl			= Usrjmp+1	; USR function JMP vector low byte
+    12 = 000C			Usrjph			= Usrjmp+2	; USR function JMP vector high byte
+    13 = 000D			Nullct			= $0D		; nulls output after each line
+    14 = 000E			TPos			= $0E		; BASIC terminal position byte
+    15 = 000F			TWidth			= $0F		; BASIC terminal width byte
+    16 = 0010			Iclim			= $10		; input column limit
+    17 = 0011			Itempl			= $11		; temporary integer low byte
+    18 = 0012			Itemph			= Itempl+1	; temporary integer high byte
+    19
+    20 = 0011			nums_1			= Itempl	; number to bin/hex string convert MSB
+    21 = 0012			nums_2			= nums_1+1	; number to bin/hex string convert
+    22 = 0013			nums_3			= nums_1+2	; number to bin/hex string convert LSB
+    23
+    24 				; *** free space **********************************************************
+    25 				;			= $14		; *used by JC2 system
+    26 				;			= $15		; *used by JC2 system
+    27 				;			= $16		; *used by JC2 system
+    28 				;			= $17		; *used by JC2 system
+    29 				;			= $18		; *used by JC2 system
+    30 				;			= $19		; *used by JC2 system 
+    31 				; *************************************************************************
+    32
+    33 = 001A			Temp1			= $1A		; temporary byte for free use
+    34
+    35 = 001B			Srchc			= $1B		; search character
+    36 = 001B			Temp3			= Srchc		; temp byte used in number routines
+    37 = 001C			Scnquo			= $1C		; scan-between-quotes flag
+    38 = 001C			Asrch			= Scnquo	; alt search character
+    39
+    40 = 001B			XOAw_l			= Srchc		; eXclusive OR, OR and AND word low byte
+    41 = 001C			XOAw_h			= Scnquo	; eXclusive OR, OR and AND word high byte
+    42
+    43 = 001D			Ibptr			= $1D		; input buffer pointer
+    44 = 001D			Dimcnt			= Ibptr		; # of dimensions
+    45
+    46 = 001E			Defdim			= $1E		; default DIM flag
+    47 = 001F			Dtypef			= $1F		; data type flag, $FF=string, $00=numeric
+    48 = 0020			Oquote			= $20		; open quote flag (b7) (Flag: DATA scan; LIST quote; memory)
+    49 = 0020			Gclctd			= $20		; garbage collected flag
+    50 = 0021			Sufnxf			= $21		; subscript/FNX flag, 1xxx xxx = FN(0xxx xxx)
+    51 = 0022			Imode			= $22		; input mode flag, $00=INPUT, $80=READ
+    52
+    53 = 0023			Cflag			= $23		; comparison evaluation flag
+    54
+    55 = 0024			TabSiz			= $24		; TAB step size (was input flag)
+    56
+    57 = 0025			next_s			= $25		; next descriptor stack address
+    58
+    59 									; these two bytes form a word pointer to the item
+    60 									; currently on top of the descriptor stack
+    61
+    62 = 0026			last_sl			= $26		; last descriptor stack address low byte
+    63 = 0027			last_sh			= $27		; last descriptor stack address high byte (always $00)
+    64
+    65 = 0028			des_sk			= $28		; descriptor stack start address (temp strings)
+    66
+    67 				;			= $30		; End of descriptor stack
+    68
+    69 = 0031			ut1_pl			= $31		; utility pointer 1 low byte
+    70 = 0032			ut1_ph			= ut1_pl+1	; utility pointer 1 high byte
+    71 = 0033			ut2_pl			= $33		; utility pointer 2 low byte
+    72 = 0034			ut2_ph			= ut2_pl+1	; utility pointer 2 high byte
+    73
+    74 = 0035			FACt_1			= $35		; FAC temp mantissa1
+    75 = 0036			FACt_2			= FACt_1+1	; FAC temp mantissa2
+    76 = 0037			FACt_3			= FACt_2+1	; FAC temp mantissa3
+    77
+    78 = 0036			dims_l			= FACt_2	; array dimension size low byte
+    79 = 0037			dims_h			= FACt_3	; array dimension size high byte
+    80
+    81 = 0038			TempB			= $38		; temp page 0 byte
+    82
+    83 = 0039			Smeml			= $39		; start of mem low byte		(Start-of-Basic)
+    84 = 003A			Smemh			= Smeml+1	; start of mem high byte	(Start-of-Basic)
+    85 = 003B			Svarl			= $3B		; start of vars low byte	(Start-of-Variables)
+    86 = 003C			Svarh			= Svarl+1	; start of vars high byte	(Start-of-Variables)
+    87 = 003D			Sarryl			= $3D		; var mem end low byte		(Start-of-Arrays)
+    88 = 003E			Sarryh			= Sarryl+1	; var mem end high byte		(Start-of-Arrays)
+    89 = 003F			Earryl			= $3F		; array mem end low byte	(End-of-Arrays)
+    90 = 0040			Earryh			= Earryl+1	; array mem end high byte	(End-of-Arrays)
+    91 = 0041			Sstorl			= $41		; string storage low byte	(String storage (moving down))
+    92 = 0042			Sstorh			= Sstorl+1	; string storage high byte	(String storage (moving down))
+    93 = 0043			Sutill			= $43		; string utility ptr low byte
+    94 = 0044			Sutilh			= Sutill+1	; string utility ptr high byte
+    95 = 0045			Ememl			= $45		; end of mem low byte		(Limit-of-memory)
+    96 = 0046			Ememh			= Ememl+1	; end of mem high byte		(Limit-of-memory)
+    97 = 0047			Clinel			= $47		; current line low byte		(Basic line number)
+    98 = 0048			Clineh			= Clinel+1	; current line high byte	(Basic line number)
+    99 = 0049			Blinel			= $49		; break line low byte		(Previous Basic line number)
+   100 = 004A			Blineh			= Blinel+1	; break line high byte		(Previous Basic line number)
+   101
+   102 = 004B			Cpntrl			= $4B		; continue pointer low byte
+   103 = 004C			Cpntrh			= Cpntrl+1	; continue pointer high byte
+   104
+   105 = 004D			Dlinel			= $4D		; current DATA line low byte
+   106 = 004E			Dlineh			= Dlinel+1	; current DATA line high byte
+   107
+   108 = 004F			Dptrl			= $4F		; DATA pointer low byte
+   109 = 0050			Dptrh			= Dptrl+1	; DATA pointer high byte
+   110
+   111 = 0051			Rdptrl			= $51		; read pointer low byte
+   112 = 0052			Rdptrh			= Rdptrl+1	; read pointer high byte
+   113
+   114 = 0053			Varnm1			= $53		; current var name 1st byte
+   115 = 0054			Varnm2			= Varnm1+1	; current var name 2nd byte
+   116
+   117 = 0055			Cvaral			= $55		; current var address low byte
+   118 = 0056			Cvarah			= Cvaral+1	; current var address high byte
+   119
+   120 = 0057			Frnxtl			= $57		; var pointer for FOR/NEXT low byte
+   121 = 0058			Frnxth			= Frnxtl+1	; var pointer for FOR/NEXT high byte
+   122
+   123 = 0057			Tidx1			= Frnxtl	; temp line index
+   124
+   125 = 0057			Lvarpl			= Frnxtl	; let var pointer low byte
+   126 = 0058			Lvarph			= Frnxth	; let var pointer high byte
+   127
+   128 = 0059			prstk			= $59		; precedence stacked flag
+   129
+   130 = 005B			comp_f			= $5B		; compare function flag, bits 0,1 and 2 used
+   131 									; bit 2 set if >
+   132 									; bit 1 set if =
+   133 									; bit 0 set if <
+   134
+   135 = 005C			func_l			= $5C		; function pointer low byte
+   136 = 005D			func_h			= func_l+1	; function pointer high byte
+   137
+   138 = 005C			garb_l			= func_l	; garbage collection working pointer low byte
+   139 = 005D			garb_h			= func_h	; garbage collection working pointer high byte
+   140
+   141 = 005E			des_2l			= $5E		; string descriptor_2 pointer low byte
+   142 = 005F			des_2h			= des_2l+1	; string descriptor_2 pointer high byte
+   143
+   144 = 0060			g_step			= $60		; garbage collect step size
+   145
+   146 = 0061			Fnxjmp			= $61		; jump vector for functions
+   147 = 0062			Fnxjpl			= Fnxjmp+1	; functions jump vector low byte
+   148 = 0063			Fnxjph			= Fnxjmp+2	; functions jump vector high byte
+   149
+   150 = 0062			g_indx			= Fnxjpl	; garbage collect temp index
+   151 					
+   152 = 0063			FAC2_r			= $63		; FAC2 rounding byte
+   153
+   154 = 0064			Adatal			= $64		; array data pointer low byte
+   155 = 0065			Adatah			= Adatal+1	; array data pointer high  byte
+   156
+   157 = 0064			Nbendl			= Adatal	; new block end pointer low byte
+   158 = 0065			Nbendh			= Adatah	; new block end pointer high  byte
+   159
+   160 = 0066			Obendl			= $66		; old block end pointer low byte
+   161 = 0067			Obendh			= Obendl+1	; old block end pointer high  byte
+   162
+   163 = 0068			numexp			= $68		; string to float number exponent count
+   164 = 0069			expcnt			= $69		; string to float exponent count
+   165
+   166 = 0068			numbit			= numexp	; bit count for array element calculations
+   167
+   168 = 006A			numdpf			= $6A		; string to float decimal point flag
+   169 = 006B			expneg			= $6B		; string to float eval exponent -ve flag
+   170
+   171 = 006A			Astrtl			= numdpf	; array start pointer low byte
+   172 = 006B			Astrth			= expneg	; array start pointer high  byte
+   173
+   174 = 006A			Histrl			= numdpf	; highest string low byte
+   175 = 006B			Histrh			= expneg	; highest string high  byte
+   176
+   177 = 006A			Baslnl			= numdpf	; BASIC search line pointer low byte
+   178 = 006B			Baslnh			= expneg	; BASIC search line pointer high  byte
+   179
+   180 = 006A			Fvar_l			= numdpf	; find/found variable pointer low byte
+   181 = 006B			Fvar_h			= expneg	; find/found variable pointer high  byte
+   182
+   183 = 006A			Ostrtl			= numdpf	; old block start pointer low byte
+   184 = 006B			Ostrth			= expneg	; old block start pointer high  byte
+   185
+   186 = 006A			Vrschl			= numdpf	; variable search pointer low byte
+   187 = 006B			Vrschh			= expneg	; variable search pointer high  byte
+   188
+   189 = 006C			FAC1_e			= $6C		; FAC1 exponent
+   190 = 006D			FAC1_1			= FAC1_e+1	; FAC1 mantissa1
+   191 = 006E			FAC1_2			= FAC1_e+2	; FAC1 mantissa2
+   192 = 006F			FAC1_3			= FAC1_e+3	; FAC1 mantissa3
+   193 = 0070			FAC1_s			= FAC1_e+4	; FAC1 sign (b7)
+   194
+   195 = 006C			str_ln			= FAC1_e	; string length
+   196 = 006D			str_pl			= FAC1_1	; string pointer low byte
+   197 = 006E			str_ph			= FAC1_2	; string pointer high byte
+   198
+   199 = 006E			des_pl			= FAC1_2	; string descriptor pointer low byte
+   200 = 006F			des_ph			= FAC1_3	; string descriptor pointer high byte
+   201
+   202 = 006F			mids_l			= FAC1_3	; MID$ string temp length byte
+   203
+   204 = 0071			negnum			= $71		; string to float eval -ve flag
+   205 = 0071			numcon			= $71		; series evaluation constant count
+   206
+   207 = 0072			FAC1_o			= $72		; FAC1 overflow byte
+   208
+   209 = 0073			FAC2_e			= $73		; FAC2 exponent
+   210 = 0074			FAC2_1			= FAC2_e+1	; FAC2 mantissa1
+   211 = 0075			FAC2_2			= FAC2_e+2	; FAC2 mantissa2
+   212 = 0076			FAC2_3			= FAC2_e+3	; FAC2 mantissa3
+   213 = 0077			FAC2_s			= FAC2_e+4	; FAC2 sign (b7)
+   214
+   215 = 0078			FAC_sc			= $78		; FAC sign comparison, Acc#1 vs #2
+   216 = 0079			FAC1_r			= $79		; FAC1 rounding byte
+   217
+   218 = 0078			ssptr_l			= FAC_sc	; string start pointer low byte
+   219 = 0079			ssptr_h			= FAC1_r	; string start pointer high byte
+   220
+   221 = 0078			sdescr			= FAC_sc	; string descriptor pointer
+   222
+   223 = 007A			csidx			= $7A		; line crunch save index
+   224 = 007A			Asptl			= csidx		; array size/pointer low byte
+   225 = 007B			Aspth			= $7B		; array size/pointer high byte
+   226
+   227 = 007A			Btmpl			= Asptl		; BASIC pointer temp low byte
+   228 = 007B			Btmph			= Aspth		; BASIC pointer temp low byte
+   229
+   230 = 007A			Cptrl			= Asptl		; BASIC pointer temp low byte
+   231 = 007B			Cptrh			= Aspth		; BASIC pointer temp low byte
+   232
+   233 = 007A			Sendl			= Asptl		; BASIC pointer temp low byte
+   234 = 007B			Sendh			= Aspth		; BASIC pointer temp low byte
+   235
+   236 = 007C			LAB_IGBY		= $7C		; get next BASIC byte subroutine
+   237
+   238 = 0082			LAB_GBYT		= $82		; get current BASIC byte subroutine
+   239 = 0083			Bpntrl			= $83		; BASIC execute (get byte) pointer low byte
+   240 = 0084			Bpntrh			= Bpntrl+1	; BASIC execute (get byte) pointer high byte
+   241
+   242 				;			= $97		; end of get BASIC char subroutine
+   243
+   244 				; Rbyte4,1,2,3 are moved to $1860 to free up ZP-use
+   245 				; I2Cstat is moved to $180F
+    35
+    36 				; ------------------------------------------------
+    37 				; DOS variables: $A0 to $A6, see boot.sys files
+    38 				; ------------------------------------------------
+    39 = 00A0			ZP_DOS          EQU     $A0		; Reserved for DOS and boot.sys
+    40 = 00A0			CURR_DIR_ENTRY  EQU     ZP_DOS+$00      ; $A0..$A1 (16 bit) - pointer to current addressed directory entry
+    41 = 00A2			MASK            EQU     ZP_DOS+$02	; $A2 Mask for FAT table
+    42 = 00A3			BCNT            EQU     ZP_DOS+$03      ; $A3 Block Counter
+    43 = 00A4			NCNT            EQU     ZP_DOS+$04	; $A4
+    44 = 00A5			SCNT            EQU     ZP_DOS+$05	; $A5 Sector counter within a cluster
+    45 = 00A6			RES             EQU     ZP_DOS+$06	; $A6
+    46
+    47 				; ------------------------------------------------
+    48 				; FGC variables: $A8 to $BB, see FGC .asm files
+    49 				; ------------------------------------------------
+    50 = 00A8			ZP_FGC          EQU     $A8             ; Zero Page Base Address
+    51 = 00A8			VPUMODE         EQU     ZP_FGC+$00      ; current VPU mode
+    52 = 00A9			MAX_X           EQU     ZP_FGC+$01      ; max characters per line
+    53 = 00AA			CURSOR_TICKS    EQU     ZP_FGC+$02      ; blink frequency in ticks (1/60 sec or 1/50 sec)
+    54 = 00AB			CURSOR          EQU     ZP_FGC+$03      ; character under the cursor
+    55 = 00AC			BUFFSIZE        EQU     ZP_FGC+$04      ; actual scroll buffer size
+    56 = 00AD			PAGECNT         EQU     ZP_FGC+$05      ; page buffer counter
+    57 = 00AE			TXTCOLOR        EQU     ZP_FGC+$06
+    58 = 00AF			COLOR           EQU     ZP_FGC+$07
+    59 = 00B2			POS_X           EQU     ZP_FGC+$0A      ; cursor X position (2-bytes)
+    60 = 00B4			POS_Y           EQU     ZP_FGC+$0C      ; cursor Y position
+    61 = 00B5			ADR_CHAR        EQU     ZP_FGC+$0D 	; 2-byte pointer
+    62 = 00B7			FGC_ADR         EQU     ZP_FGC+$0F
+    63 = 00B7			FGC_ADRL        EQU	ZP_FGC+$0F   	; last address Low
+    64 = 00B8			FGC_ADRH      	EQU   	ZP_FGC+$10  	; last address High
+    65 = 00B9			FGC_XREG        EQU     ZP_FGC+$11      ; current saved X register
+    66 = 00BA			FGC_YREG        EQU     ZP_FGC+$12      ; current saved Y register
+    67 = 00BB			VARSAV          EQU     ZP_FGC+$13      ; saved variable
+    68
+    69 				; ------------------------------------------------
+    70 				; BIOS variables: $C0 to $FF
+    71 				; ------------------------------------------------
+    72 = 00C0			NUM32      	EQU   	$C0     	; low 32 bit number byte (moved from $F8)
+    73 = 00C4			SUM32           EQU     $C4             ; low 32 bit number byte (moved from $FC)
+    74 = 00C9			DEVID		EQU	$C9		; 1-byte temp device id (moved from $03 to avoid Basic collision)
+    75 = 00CA			PRSTR		EQU	$CA		; 2-bytes replacement for PSTR
+    76 = 00CC			END_PTR		EQU	$CC		; ROM end-pointer (2 bytes), also used by boot.sys
+    77 = 00CE			ROM_PTR		EQU	$CE		; ROM pointer (2 bytes)
+    78 = 00D0			ROM_CS		EQU	$D0		; ROM checksum counter (2 bytes)
+    79 = 00D2			CFLBA0          EQU     $D2		; CF-card LBA 0 [0:7]
+    80 = 00D3			CFLBA1          EQU     $D3		; CF-card LBA 1 [8:15]
+    81 = 00D4			CFLBA2          EQU     $D4		; CF-card LBA 2 [16:23]
+    82 = 00D5			CFLBA3          EQU     $D5		; CF-card LBA 3 [24:27]
+    83 = 00D6			MSEC		EQU	$D6		; msec time-out counter
+    84 = 00D7			RSTACT		EQU	$D7		; 1 = Reset Pending
+    85 = 00D8			SAVEX		EQU 	$D8		; Temp. save X register
+    86 = 00D9			SAVEY		EQU	$D9		; Temp. save Y register
+    87 = 00DA			TICKCNT         EQU     $DA             ; current tick counter
+    88 = 00DB			SD_TYPE		EQU	$DB		; SD Card Type: $00 Byte mode, $40 LBA mode
+    89 = 00DC			BLKBUF		EQU	$DC             ; pointer to block buffer
+    90 = 00DC			BLKBUFL		EQU	$DC             ; lower byte of block buffer pointer
+    91 = 00DC			CRCL      	EQU   	$DC      	; XModem CRC lo byte
+    92 = 00DD			BLKBUFH		EQU	$DD             ; upper byte of block buffer pointer
+    93 = 00DD			CRCH      	EQU   	$DD     	; XModem CRC hi byte
+    94 = 00DE			SD_CMD		EQU	$DE		; SD-Card CMD Byte
+    95 = 00DE			RETRYL    	EQU   	$DE      	; XModem retry counter lo byte
+    96 = 00DE			PDEV		EQU	$DE		; device descriptor pointer
+    97 = 00DE			PDEVL    	EQU   	$DE      	; device descriptor pointer lo byte
+    98 = 00DF			SD_PB3      	EQU   	$DF   		; SD-Card Parameter Byte 3
+    99 = 00DF			RETRYH    	EQU   	$DF      	; XModem retry counter hi byte
+   100 = 00DF			PDEVH    	EQU   	$DF      	; device descriptor pointer hi byte
+   101
+   102 = 00E0			SD_PB2		EQU   	$E0   		; SD-Card Parameter Byte 2
+   103 = 00E0			BAUDRATE  	EQU   	$E0    		; ACIA current baud rate
+   104 = 00E0			OPCODE		EQU	$E0		; DISASSEM current opcode
+   105 = 00E0			I2C_DATA	EQU	$E0		; I2C current I2C data byte
+   106 = 00E0			BLKEND      	EQU     $E0		; XModem block end flag
+   107 = 00E1			KEY     	EQU     $E1   		; MON 1-byte Editor 
+   108 = 00E1			SD_PB1      	EQU   	$E1   		; SD-Card Parameter Byte 1
+   109 = 00E1			LINECNT		EQU	$E1		; DISASSEM number of disassembled lines
+   110 = 00E1			BFLAG     	EQU   	$E1      	; XModem block flag
+   111 = 00E2			BEGADR  	EQU     $E2   		; MON 2-byte Editor Begin Address Pointer
+   112 = 00E2			SD_PB0		EQU	$E2   		; SD-Card Parameter Byte 0
+   113 = 00E2			ADRMODE		EQU	$E2		; DISASSEM addressing mode
+   114 = 00E2			BLKNO     	EQU   	$E2      	; XModem block number
+   115 = 00E3			SD_CRC		EQU	$E3   		; SD-Card CRC Byte
+   116 = 00E3			IBYTES		EQU	$E3		; DISASSEM instruction byte count
+   117 = 00E3			ERRCNT    	EQU   	$E3      	; XModem error counter 10 is the limit
+   118 = 00E4			ENDADR  	EQU     $E4   		; MON 2-byte Editor End Address Pointer
+   119 = 00E4			VIA_STATUS 	EQU	$E4 		; VIA2 current VIA2 PortB output status
+   120
+   121 = 00E6			CURADR  	EQU     $E6   		; MON 2-byte Editor Current Address Pointer
+   122 = 00E6			ASCL	  	EQU   	$E6     	; MON ASCII list start address low
+   123 = 00E6			PLBA		EQU	$E6		; LBA pointer
+   124 = 00E6			PLBAL		EQU	$E6		; LBA pointer low byte
+   125 = 00E7			ASCH      	EQU   	$E7     	; MON ASCII list start address high
+   126 = 00E7			PLBAH		EQU	$E7		; LBA pointer high byte
+   127 = 00E8			CENDADR 	EQU     $E8   		; MON 2-byte Editor Current End Address Pointer
+   128 = 00E8			STOL      	EQU   	$E8     	; MON store address Low
+   129 = 00E9			STOH      	EQU   	$E9     	; MON store address High
+   130 = 00EA			MOVADR  	EQU     $EA   		; MON 2-byte Editor 
+   131 = 00EA			PSTR      	EQU   	$EA      	; ACIA output string Pointer
+   132 = 00EA			PSTRL     	EQU   	$EA      	; ACIA lower address byte of output string pointer
+   133 = 00EB			PSTRH     	EQU   	$EB      	; ACIA upper address byte of output string pointer
+   134 = 00EC			TABLEA  	EQU     $EC   		; MON 2-byte Editor 
+   135 = 00EC			WBUF      	EQU   	$EC      	; ACIA character output buffer
+   136
+   137 = 00EE			LABELS  	EQU     $EE   		; MON 1-byte Editor 
+   138 = 00EE			PSAV            EQU     $EE		; Saved Partition Number in ASCII
+   139 = 00EF			PCL		EQU	$EF		; CPU program counter Low
+   140
+   141 = 00F0			PCH		EQU	$F0		; CPU program counter High
+   142 = 00F1			PREG		EQU	$F1		; CPU processor status register
+   143 = 00F2			SPUSER		EQU	$F2		; CPU stack pointer
+   144 = 00F2			DIVCHAR		EQU	$F2             ; CLOCK current divider char (. or / for date : for time)
+   145 = 00F3			ACC		EQU	$F3		; CPU accumulator
+   146 = 00F4			YREG		EQU	$F4		; CPU y-register
+   147 = 00F5			XREG		EQU	$F5		; CPU x-register
+   148 = 00F6			BYTES   	EQU     $F6   		; MON 1-byte Number of bytes to be displayed
+   149 = 00F7			COUNT   	EQU     $F7   		; MON 1-byte
+   150 = 00F8			DIG0      	EQU   	$F8     	; 10^0 digit, used by NUMOUT and DEC2STR
+   151 = 00F8			NUML      	EQU   	$F8     	; MON low number byte
+   152 = 00F8			INL     	EQU     $F8   		; MON 1-byte hex display buffer
+   153 = 00F9			INH     	EQU     $F9   		; MON 1-byte hex display buffer
+   154 = 00F9			DIG1	  	EQU   	$F9	 	; 10^1 digit, used by NUMOUT and DEC2STR
+   155 = 00F9			NUMH	  	EQU   	$F9	 	; MON high number byte
+   156 = 00FA			POINT   	EQU     $FA   		; MON 2-byte
+   157 = 00FA			DIG2      	EQU   	$FA     	; 10^2 digit, used by NUMOUT and DEC2STR
+   158 = 00FA			ADRL      	EQU   	$FA     	; MON last address Low
+   159 = 00FB			ADRH      	EQU   	$FB     	; MON last address High
+   160 = 00FC			TEMP      	EQU   	$FC     	; MON temp storage
+   161 = 00FD			TEMPX   	EQU     $FD   		; MON 1-byte temp. data-buffer
+   162 = 00FD			YSAV      	EQU   	$FD     	; MON Y register storage
+   163 = 00FE			NIBBLE  	EQU     $FE   		; MON 1-byte temp. data-buffer
+   164 = 00FE			PDBCNT    	EQU   	$FE     	; MON number of printed data bytes
+   165 = 00FF			MODE      	EQU   	$FF     	; MON current edit mode
+   166
+   167 				;------------------------------------------------------------------------------
+   168 				; Junior Computer ][ BIOS & Monitor ADDRESS DEFINES
+   169 				; $0100 - $01FF is reserved for the 6502 Stack
+   170 				;------------------------------------------------------------------------------ 
+   171
+   172 				;----------------------------------------------------------------------------
+   173 				; Block Device / Tables and Buffer Addresses
+   174 				;----------------------------------------------------------------------------
+   175 = 0200			DIR_BLK_BUF     EQU     $0200           	; Directory Block Buffer
+   176 = 0200			DIR_BLK_BUFL    EQU     DIR_BLK_BUF     	; Lower page of directory buffer
+   177 = 0300			DIR_BLK_BUFH    EQU     DIR_BLK_BUF+$100	; upper page of directory buffer
+   178
+   179 				; Current Volume Descriptor (32 Bytes) -----------------------------------------
+   180 				; The BOOT routine in BIOS has already loaded the MBR into $0600, loaded the
+   181 				; Volume-ID sector into $0400 and did set (most of) these variables.
+   182 				; ------------------------------------------------------------------------------
+   183 = 0400			CURR_VOLUME     EQU     $0400           	; Current Volume Descriptor, used by boot.sys and mkbootcf
+   184 = 0400			BOOT_PART       EQU     CURR_VOLUME     	; Boot Medium Descriptor: used by bios and mkbootcf
+   185 = 0400			D_PART_START	EQU	CURR_VOLUME+$00		; 4 Bytes - Volume ID sector LBA
+   186 = 0404			D_ACTUAL_DIR    EQU     CURR_VOLUME+$04     	; 4 Bytes - Actual Directory cluster number
+   187 = 0408			D_DEV_ID        EQU     CURR_VOLUME+$08 	; 1 Byte  - Device ID
+   188 = 0409			D_MEDIUM_DESCR  EQU     CURR_VOLUME+$09 	; 1 Byte  - Medium Descriptor Byte or Partition Number in ASCII if harddisk
+   189 = 040A			D_FAT_TYPE      EQU     CURR_VOLUME+$0A 	; 1 Byte  - FAT Type (0=FAT32)
+   190 = 040B			D_SECT_PER_CLST EQU     CURR_VOLUME+$0B 	; 1 Byte  - Sectors/Cluster
+   191 = 040C			D_NUM_OF_FAT    EQU     CURR_VOLUME+$0C 	; 1 Byte  - Number of FATs
+   192 = 040D			D_NUM_ROOT_DIR  EQU     CURR_VOLUME+$0D 	; 2 Bytes - Number of Root directory Entries
+   193 = 040F			D_DEV_ATTRIBS   EQU     CURR_VOLUME+$0F 	; 1 Byte  - Device Attributes
+   194 = 0410			D_START_CLS_LBA EQU     CURR_VOLUME+$10 	; 4 Bytes - Start LBA of Cluster Area (= cluster_begin_lba - 2)
+   195 = 0414			D_START_FAT1    EQU     CURR_VOLUME+$14 	; 4 Bytes - Start LBA of FAT1
+   196 = 0418			D_START_FAT2    EQU     CURR_VOLUME+$18 	; 4 Bytes - Start LBA of FAT2
+   197 = 041C			D_START_DIR     EQU     CURR_VOLUME+$1C 	; 4 Bytes - root_dir_first_cluster (usually 2), also LBA nr for FAT16/12
+   198 = 0420			CURR_CLUSTER    EQU     CURR_VOLUME+$20         ; 4 Bytes - current addressed cluster in boot.sys
+   199 = 0424			CURR_FAT_BLK    EQU     CURR_VOLUME+$24         ; 4 Bytes - current loaded FAT LBA in boot.sys
+   200 = 0428			D_SUBDIR_NAME	EQU	CURR_VOLUME+$28		; ? Bytes - Name of entire path (root dir is \)
+   201
+   202 = 0500			MOUNT_TABLE     EQU     $0500           	; Table of mounted devices, used by boot.sys
+   203
+   204 = 0600			FAT_BUF		EQU	$0600           	; Buffer for FAT32 sector
+   205 = 0600			BLOCK_BUF	EQU	$0600			; 1st sector of boot.sys is also stored here
+   206 = 0600			MBR             EQU     BLOCK_BUF      		; Master Boot Block Code, contains a BNE to boot-code
+   207 = 07BE			PART0		EQU	MBR + $01BE		; Partition 0 start
+   208 = 07C6			PART0_RS	EQU	PART0 + 8 		; Partition 0 relative sector field
+   209 = 07CE			PART0_SIZE	EQU	PART0 + 16		; Partition 0 sector size field
+   210 = 07FE			BOOTBLK_TAG     EQU     MBR + $01FE           	; Address of Boot Block Tag ($55 $AA)
+   211
+   212 = 2000			BAS_LOAD_ADDR	EQU	$2000			; .BAS Load-address
+   213 = 3000			COM_RUN_ADDR	EQU	$3000			; .COM load- and run-address
+   214
+   215 				; IO Base Addresses ---------------------------------------------------------
+   216 				;----------------------------------------------------------------------------
+   217 = 0800			K2		EQU	$0800		; Base address of IO select K2
+   218 = 0C00			K3		EQU	$0C00		; Base address of IO select K3 = IO2-card
+   219 = 1000			K4		EQU	$1000		; Base address of IO select K4 = FGC-card
+   220
+   221 				;----------------------------------------------------------------------------
+   222 				; CF-IDE Hardware Registers (on stand-alone card or IO2-board)
+   223 				;----------------------------------------------------------------------------
+   224 = 0C80			CFBASE		EQU 	K3 + $80	; Base card-address for CF card
+   225 = 0C80			CFREG0		EQU	CFBASE+0	; Data port
+   226 = 0C81			CFREG1		EQU	CFBASE+1	; Read: error-code, write: feature
+   227 = 0C82			CFREG2		EQU	CFBASE+2	; Number of sectors to transfer
+   228 = 0C83			CFREG3		EQU	CFBASE+3	; Sector address LBA 0 [0:7] (LSB)
+   229 = 0C84			CFREG4		EQU	CFBASE+4	; Sector address LBA 1 [8:15]
+   230 = 0C85			CFREG5		EQU	CFBASE+5	; Sector address LBA 2 [16:23]
+   231 = 0C86			CFREG6		EQU	CFBASE+6	; Sector address LBA 3 [24:27] (MSB)
+   232 = 0C87			CFREG7		EQU	CFBASE+7	; Read: Status, Write: Command
+   233 = 0C88			CFREG8		EQU	CFBASE+8	; A write with 0x00 is a HW reset
+   234
+   235 				;----------------------------------------------------------------------------
+   236 				; FGC / VIDEO Card Hardware Registers
+   237 				;----------------------------------------------------------------------------
+   238 = 1000			FGC_BASE        EQU     K4		; K4 base-address (fixed)
+   239 = 1006			FGC_START_CONF  EQU     FGC_BASE+$06  	; prepare for DIP Switch reading
+   240 = 1007			FGC_END_CONF    EQU     FGC_BASE+$07  	; read keyboard layout from DIP Switch settings
+   241 = 1008			VPU_BASE        EQU     FGC_BASE+$08  	; VPU Register Base
+   242 = 1008			VPU_PORT0       EQU     VPU_BASE      	; Data Port
+   243 = 1009			VPU_PORT1       EQU     VPU_BASE+1    	; Control Port
+   244 = 100A			VPU_PORT2       EQU     VPU_BASE+2    	; Color Pallete Port
+   245 = 100B			VPU_PORT3       EQU     VPU_BASE+3    	; Indirect Register Port
+   246 = 100C			PPI_PORTA       EQU     FGC_BASE+$0C  	; PIA Port A register
+   247 = 100E			PPI_PORTC       EQU     FGC_BASE+$0E  	; PIA Port C
+   248 = 100F			PPI_CONTROL     EQU     FGC_BASE+$0F  	; PIA Control register
+   249
+   250 = 1010			FGC_INFO        EQU     FGC_BASE+$10
+   251 = 1013			FGC_SET_PAGE    EQU     FGC_BASE+$13
+   252 = 1017			FGC_FDC_CMD     EQU     FGC_BASE+$17
+   253 = 101F			FGC_VPU_CMD     EQU     FGC_BASE+$1F
+   254 = 1027			FGC_VPU_OUT     EQU     FGC_BASE+$27
+   255
+   256 				; Buffers **********************************************************************
+   257 = 1400			STRBUF	  	EQU   	$1400    	; input string buffer at $1400
+   258 = 1500			RBUFF     	EQU   	$1500    	; xmodem receive buffer at $1500
+   259
+   260 				; ACIA Registers ***************************************************************
+   261 = 1600			DATA_REG  	EQU   	$1600    	; ACIA Data Register
+   262 = 1601			STAT_REG  	EQU   	$1601    	; ACIA Status Register
+   263 = 1602			COMM_REG  	EQU   	$1602    	; ACIA Command Register
+   264 = 1603			CTRL_REG  	EQU   	$1603    	; ACIA Control Register
+   265
+   266 				; ATF1504 Memory Management Unit (MMU) Register ********************************
+   267 = 1700			MMU		EQU	$1700		; MMU Register
+   268
+   269 				;------------------------------------------------------------------------------
+   270 				; $1800 - $19FF 512 Bytes, previously unused, on JC2 v4.1 this has become RAM.
+   271 				;------------------------------------------------------------------------------
+   272 = 1800			PPORTLOAD	EQU	$1800		; jump location for test code
+   273 = 1803			PPORTSAVE	EQU	$1803		; jump location for test code
+   274 = 1806			CF_LOAD_VEC	EQU	$1806		; 2-byte vector for CF-card LOAD vector
+   275 = 1808			CF_SAVE_VEC	EQU	$1808		; 2-byte vector for CF-card SAVE vector
+   276 = 180A			RETURN_VECT     EQU     $180A           ; 2-byte return vector to monitor caller (moved from $01 to avoid Basic collision)
+   277 = 180C			I2Cstat		EQU	$180C		; BASIC I2C read byte or ACK/NACK bit (moved from Basic $9C) 
+   278 = 180D			KBD_LANG        EQU     $180D         	; Current selected keyboard language for FGC-card
+   279 = 180E			FLOPPY_TYPE     EQU     $180E     	; floppy type settings for FGC-card
+   280
+   281 = 1810			NEXTINDEX       EQU     $1810		; command index
+   282 = 1811			TERM_CHAR       EQU     $1811
+   283 = 1812			F_ATTRIBS       EQU     $1812
+   284 = 1813			TERM_FLAG       EQU     $1813		; set/clear counter termination flag
+   285 = 1814			LINE_CNT        EQU     $1814		; line-counter for DIR command
+   286 = 1815			CURR_FILE_CNT   EQU     $1815      	; (16 bit) - total number of files in dir
+   287 = 1817			CURR_DIR_CNT    EQU     $1817      	; (16 bit) - total number of directories in dir
+   288 = 1819			CURR_USED_SIZE  EQU     $1819      	; (32 bit) - total number of bytes in dir
+   289 = 181D			CURR_BLK_NUM    EQU     $181D      	; directory block counter
+   290 = 181E			CURR_DRIVE      EQU     $181E      	; current selected drive
+   291 = 181F			CURR_CMD_PARAM  EQU     $181F      	; current command parameter
+   292 = 1820			FREE_CLUSTER    EQU     $1820           ; (32 bit) - last free cluster
+   293 = 1824			CURR_DIR_BLK    EQU     $1824       	; (32 bit) - current directory LBA
+   294 = 1828			DBG_PRINT	EQU	$1828		; 1 = Print debug info
+   295
+   296 				; INPBUF is the BASIC Input Buffer. It is defined from $1868 - $18FF
+   297 				; Rbytes are moved from Basic $98..$9B to free up ZP-space
+   298 = 1860			Rbyte4		EQU	$1860		; extra PRNG byte
+   299 = 1861			Rbyte1		EQU	$1861		; most significant PRNG byte
+   300 = 1862			Rbyte2		EQU	$1862		; middle PRNG byte
+   301 = 1863			Rbyte3		EQU	$1863		; least significant PRNG byte
+   302
+   303 = 1868			INPBUF	  	EQU 	$1868		; change input buffer to last 151 bytes in page
+   304 = 1868			ccflag		EQU	INPBUF		; BASIC CTRL-C flag, 00 = enabled, 01 = dis
+   305 = 1869			ccbyte		EQU 	ccflag+1	; BASIC CTRL-C byte
+   306 = 186A			ccnull		EQU 	ccbyte+1	; BASIC CTRL-C byte timeout
+   307 = 186B			VEC_CC		EQU 	ccnull+1	; ctrl c check vector
+   308
+   309 				; Ibuffs can now be anywhere in RAM, ensure that the max length is < $80
+   310 = 187F			Ibuffs		EQU 	VEC_CC+$14	; start of input buffer after IRQ/NMI code
+   311 = 18FE			Ibuffe		EQU 	Ibuffs+$7F	; end of input buffer
+   312
+   313 				;------------------------------------------------------------------------------
+   314 				; $1A00 - $1AFF 256 Bytes, RIOT RAM area
+   315 				;------------------------------------------------------------------------------
+   316 = 1A00			IO_INFO         EQU     $1A00           ; Initialization info call for IO card
+   317
+   318 = 1A24			KEY_HANDLER     EQU     $1A24           ; character input handler
+   319 = 1A26			NKEY_HANDLER    EQU     $1A26           ; no character input handler
+   320 = 1A28			DEVLIST		EQU	$1A28		; start of device driver list
+   321
+   322 = 1A66			STDBEEP		EQU	$1A66		; current standard beep routine
+   323 = 1A68			DEVIN		EQU	$1A68		; current opened device input routine
+   324 = 1A6A			DEVOUT		EQU	$1A6A		; current opened device output routine
+   325 = 1A6C			DEVCMD		EQU	$1A6C		; current opened device command routine
+   326 = 1A6E			STDIN		EQU	$1A6E		; current standard input routine
+   327 = 1A70			STDOUT		EQU	$1A70		; current standard output routine
+   328 = 1A72			STDCMD		EQU	$1A72		; current standard command routine
+   329 = 1A74			STDINDEV  	EQU   	$1A74    	; absolut standard input device id
+   330 = 1A75			STDOUTDEV  	EQU   	$1A75    	; absolut standard output device id
+   331 = 1A76			STDPRINTDEV	EQU	$1A76		; absolutstandard printer device id
+   332 = 1A77			STOACC		EQU	$1A77		; last accumulator before interrupt
+   333
+   334 				; Interrupt Vectors ************************************************************
+   335 = 1A78			BRKUSR		EQU	$1A78		; address of user BREAK vector
+   336 = 1A7A			NMIVECT		EQU     $1A7A           ; address of NMI vector
+   337 = 1A7C			IRQUSR  	EQU   	$1A7C    	; address of user IRQ vector
+   338 = 1A7E			IRQVECT  	EQU   	$1A7E    	; address of main IRQ vector
+   339
+   340 				; Port Register ****************************************************************
+   341 = 1A80			PAD		EQU     $1A80		; Port A Data Register
+   342 = 1A81			PADD		EQU	$1A81		; Port A Data Direction Register
+   343 = 1A82			PBD		EQU	$1A82		; Port B Data Register
+   344 = 1A83			PBDD		EQU	$1A83		; Port B Data Direction Register
+   345
+   346 = 1A85			WRDC		EQU	$1A85		; Write = set positive edge detection, no int.
+   347 									; Read = get Edge Control Interrupt Register
+   348
+   349 				; Timer Register ***************************************************************
+   350 = 1A94			CNTA	  	EQU	$1A94	 	; CLK/1T no interrupt
+   351 = 1A95			CNTB	  	EQU	$1A95	 	; CLK/8T no interrupt
+   352 = 1A96			CNTC	  	EQU	$1A96	 	; CLK/64T no interrupt
+   353 = 1A97			CNTD	  	EQU	$1A97    	; CLK/1024T no interrupt
+   354 = 1A9F			CNTIRQ		EQU	$1A9F		; Timer Interrupt Register
+   355
+   356 				;------------------------------------------------------------------------------
+   357 				; $1B00 - $1BFF 256 Bytes, previously unused, on JC2 v4.1 this has become RAM.
+   358 				;------------------------------------------------------------------------------
+   359
+   360 				;------------------------------------------------------------------------------
+   361 				; $1C00 - $1FFF 1 KB, Monitor RAM area.
+   362 				;------------------------------------------------------------------------------
+   363 = 1C00			FILE_BUFF	EQU	$1C00		; 512 byte file buffer for .exe/.com/.bas in Monitor RAM
+   364
+   365 = 4000			BOOT_CODE       EQU 	$4000		; boot.sys address of 1st sector, used by mkboot and boot.sys
+    42 						ICL "jc2_constants.inc"		; JC2 constants
+Source: jc2_constants.inc
+     1 				;------------------------------------------------------------------------------
+     2 				; Junior Computer ][ BIOS & Monitor CONSTANTS
+     3 				;------------------------------------------------------------------------------ 
+     4
+     5 				; PIA Register Indices *********************************************************
+     6 = 000C			PIA_PORTA       EQU     $0C             ; Port A input/output register
+     7 = 000D			PIA_PORTB       EQU     $0D             ; Port B input/output register
+     8 = 000E			PIA_PORTC       EQU     $0E             ; Port C input/output register
+     9 = 000F			PIA_CONTROL     EQU     $0F             ; Control/Setup register
+    10
+    11 				; Memory Management Unit (MMU) Register Indices ********************************
+    12 = 0001			BIOS_EN		EQU	$01		; PORTB bit 0: 1 = enable BIOS at $E000
+    13 = 0002			MON_EN		EQU	$02		; PORTB bit 1: 1 = enable Monitor at $1C00
+    14 = 0080			BAS_EN		EQU	$80		; PORTB bit 7: 1 = enable BASIC at $B000
+    15
+    16 				; MCP23017 I2C GPIO constants
+    17 = 0040			MCP23017_I2C_0	EQU	$40		; I2C address of 1st MCP23017 on IO2 board
+    18 = 0042			MCP23017_I2C_1	EQU	$42		; I2C address of 2nd MCP23017 on IO2 board
+    19 = 0044			MCP23017_I2C_2	EQU	$44		; I2C address of 3rd MCP23017 on IO2 board
+    20 = 0000			IODIRA		EQU	$00		; IO Direction register Port A (1=input, 0=output)
+    21 = 0001			IODIRB		EQU	$01		; IO Direction register Port B (1=input, 0=output)
+    22 = 0012			GPIOA		EQU	$12		; IO Port A, read and write
+    23 = 0013			GPIOB		EQU	$13		; IO Port B, read and write
+    24
+    25 = 0068			I2C_RTC_ADR	EQU	$68		; I2C address of DS1307 Real Time Clock
+    26
+    27 				; VIA 1 Register Indices ********************************************************
+    28 = 0000			VIA_PORTB     	EQU  	$00  		; Port B input/output register
+    29 = 0001			VIA_PORTA     	EQU  	$01  		; Port A input/output register
+    30 = 0002			VIA_DDRB   	EQU  	$02		; Port B data direction register
+    31 = 0003			VIA_DDRA   	EQU  	$03		; Port A data direction register
+    32 = 0004			VIA_T1CL   	EQU  	$04		; Timer 1 counter low byte register
+    33 = 0005			VIA_T1CH   	EQU  	$05		; Timer 1 counter high byte register
+    34 = 0006			VIA_T1LL   	EQU  	$06		; Timer 1 latched counter low byte register
+    35 = 0007			VIA_T1LH   	EQU  	$07		; Timer 1 latched counter high byte register
+    36 = 0008			VIA_T2CL   	EQU  	$08		; Timer 2 counter low byte register
+    37 = 0009			VIA_T2CH   	EQU  	$09		; Timer 2 counter high byte register
+    38 = 000A			VIA_SR     	EQU  	$0A		; Shift register
+    39 = 000B			VIA_ACR    	EQU  	$0B		; Auxilary control register
+    40 = 000C			VIA_PCR    	EQU  	$0C		; Periheral control register
+    41 = 000D			VIA_IFR    	EQU  	$0D		; Interrupt flag register
+    42 = 000E			VIA_IER    	EQU  	$0E		; Interrupt enable register
+    43 = 000F			VIA_PANOHS 	EQU  	$0F
+    44
+    45 				; VIA 2 Register Indices (IO2 board: SD-card, sound, etc.) *************************
+    46 = 0010			PORTB     	EQU  	$10  		; Port B input/output register
+    47 = 0011			PORTA     	EQU  	$11  		; Port A input/output register
+    48 = 0012			DDRB   		EQU  	$12		; Port B data direction register
+    49 = 0013			DDRA   		EQU  	$13		; Port A data direction register
+    50 = 0014			T1CL   		EQU  	$14		; Timer 1 counter low byte register
+    51 = 0015			T1CH   		EQU  	$15		; Timer 1 counter high byte register
+    52 = 0016			T1LL   		EQU  	$16		; Timer 1 latched counter low byte register
+    53 = 0017			T1LH   		EQU  	$17		; Timer 1 latched counter high byte register
+    54 = 0018			T2CL   		EQU  	$18		; Timer 2 counter low byte register
+    55 = 0019			T2CH   		EQU  	$19		; Timer 2 counter high byte register
+    56 = 001A			SR     		EQU  	$1A		; Shift register
+    57 = 001B			ACR    		EQU  	$1B		; Auxilary control register
+    58 = 001C			PCR    		EQU  	$1C		; Peripheral control register
+    59 = 001D			IFR    		EQU  	$1D		; Interrupt flag register
+    60 = 001E			IER    		EQU  	$1E		; Interrupt enable register
+    61 = 001F			PANOHS 		EQU  	$1F
+    62
+    63 = 0020			CENTURY		EQU	$20		; the 20th century. change to travel in time
+    64 = 002E			DATEDIV		EQU	'.'		; divider char for date string
+    65 = 003A			TIMEDIV		EQU	':'		; divider char for time string
+    66 = 002A			MON_PROMPT    	EQU     '*'    		; prompt character for Monitor
+    67 = 002D			ADIV      	EQU     '-'    		; address divider
+    68
+    69 = 005C			BSLASH          EQU     '\'             ; Backslash ASCII Code
+    70 = 002F			FSLASH		EQU     '/'             ; Forward slash ASCII Code
+    71 = 002E			DOT             EQU     '.'             ; Dot ASCII Code
+    72 = 003A			COLON           EQU     ':'             ; Colon ASCII Code
+    73 = 002C			COMMA           EQU     ','             ; Comma ASCII Code
+    74 = 002D			MINUS           EQU     '-'             ; Minus ASCII Code
+    75 = 005F			ULINE           EQU     '_'             ; Underline ASCII Code
+    76
+    77 				; Interchangeable Chars ********************************************************
+    78 = 003E			DOS_PROMPT      EQU     '>'             ; Command Line Prompt Char
+    79 = 002E			NUM_SEP         EQU     DOT	        ; Thousand Seperator Char
+    80 = 005C			PATH_SEP        EQU     BSLASH          ; Path Separator Char
+    81 = 002F			OPT_SEP         EQU     FSLASH          ; Option Prefix Char
+    82
+    83 = 0001			CRSR            EQU     $01             ; Cursor
+    84 = 0001			SOH       	EQU     $01    		; start of header
+    85 = 0004			EOT       	EQU     $04    		; end of text
+    86 = 0006			ACK       	EQU     $06    		; acknowledged
+    87 = 0008			BS        	EQU     $08    		; backspace key
+    88 = 0009			TAB             EQU     $09             ; Horizontal Tab
+    89 = 000B			UP              EQU     $0B             ; Up Arrow
+    90 = 000D			CR        	EQU     $0D    		; carriage return
+    91 = 000A			LF	  	EQU     $0A    		; line feed
+    92 = 0015			RIGHT           EQU     $15             ; Right Arrow
+    93 = 0015			NAK       	EQU     $15    		; not acknowledged
+    94 = 0018			CAN		EQU     $18		; Cancel
+    95 = 001B			ESC       	EQU     $1B    		; ESC
+    96 = 0020			SPC		EQU     $20		; space char
+    97 = 007F			DEL             EQU     $7F             ; Delete
+    98
+    99 				; Tape Reader/Writer Constants *************************************************
+   100 = 0031			RPTIME		EQU	49		; read point time   49x8uS     = 392uS
+   101
+   102 				; Device Driver Constants ******************************************************
+   103 = 0081			KBD_MAGIC_NUM   EQU	129             ; magic number of keyboard ROM
+   104
+   105 = 0010			COM_DEV	        EQU	$10             ; COM devices base ID
+   106 = 0020			STORAGE_DEV	EQU	$20             ; STORAGE devices base ID
+   107
+   108 = 0000			NULL_ID		EQU	$00             ; the NULL device
+   109
+   110 = 0010			TTY1_ID		EQU	COM_DEV+0       ; TTY 1 device ID
+   111 = 0011			PRINTER1_ID	EQU	COM_DEV+1       ; Printer 1 device ID
+   112 = 0012			PRINTER2_ID	EQU	COM_DEV+2       ; Printer 2 device ID
+   113 = 0013			KEYBD1_ID	EQU	COM_DEV+3       ; Keyboard 1 device ID (ASCII Keyboard)
+   114 = 0014			KEYBD2_ID	EQU	COM_DEV+4       ; Keyboard 2 device ID (PS/2 Keyboard)
+   115 = 0015			VDP1_ID         EQU     COM_DEV+5       ; Video Display Processor device ID
+   116
+   117 = 0020			XMODEM1_ID	EQU	STORAGE_DEV+0   ; XModem device ID
+   118 = 0021			TAPE1_ID	EQU	STORAGE_DEV+1   ; Tape 1 device ID
+   119 = 0022			FDD1_ID         EQU     STORAGE_DEV+2   ; Floppy drive 1 device ID
+   120 = 0023			FDD2_ID         EQU     STORAGE_DEV+3   ; Floppy drive 2 device ID
+   121 = 0024			SDC1_ID		EQU	STORAGE_DEV+4   ; SD-Card device ID
+   122 = 0025			HDD1_ID		EQU	STORAGE_DEV+5   ; Harddisk 1 device ID (CF-card)
+   123 = 0026			HDD2_ID		EQU	STORAGE_DEV+6   ; Harddisk 2 device ID
+   124
+   125 				; Device Command Constants *****************************************************
+   126 = 0000			CMD_INIT	EQU	0               ; Init device
+   127 = 0001			CMD_IDENTIFY	EQU	1               ; Identify device
+   128 = 0002			CMD_NORMAL	EQU	2               ; Set normal text
+   129 = 0003			CMD_INVERSE	EQU	3               ; Set inverse text
+   130 = 0004			CMD_FLASH	EQU	4               ; Set blinking text
+   131 = 0005			CMD_HOME	EQU	5               ; Set cursor to home position
+   132 = 0006			CMD_CLRLINE	EQU	6               ; Clear line at cursor
+   133 = 0007			CMD_CLRSCRN	EQU	7               ; Clear screen
+   134 = 0008			CMD_SETCURSOR	EQU	8               ; Set cursor position X,Y
+   135
+   136 = 0010			CMD_SETSTARTADR	EQU	16              ; Set start address [X:Y]
+   137 = 0011			CMD_SETENDADR	EQU	17              ; Set end address [X:Y]
+   138
+   139 = 0020			CMD_LOAD	EQU	32              ; Load data byte from device
+   140 = 0021			CMD_SAVE	EQU	33              ; Save data byte to device
+   141 = 0022			CMD_READ	EQU	34              ; Read data block from device
+   142 = 0023			CMD_WRITE	EQU	35              ; Write data block to device
+   143 = 0024			CMD_BOOT        EQU     36              ; Boot from device
+   144 = 0025			CMD_READ_BUF	EQU	37              ; Read data block from device to standard buffer
+   145 = 0026			CMD_WRITE_BUF	EQU	38              ; Write data block to device from standard buffer
+   146
+   147 				; File Attributes **************************************************************
+   148 = 0001			FA_READONLY     EQU     $01            	; file is read only
+   149 = 0002			FA_HIDDEN       EQU     $02            	; file is hidden
+   150 = 0004			FA_SYSTEM       EQU     $04            	; file is a system file
+   151 = 0008			FA_LABEL        EQU     $08            	; file is a volume label
+   152 = 0010			FA_DIRECTORY    EQU     $10            	; file is a directory
+   153 = 0020			FA_ARCHIVE      EQU     $20            	; file is modified
+   154 = 0040			FA_RESERVED1    EQU     $40
+   155 = 0080			FA_LINK         EQU     $80            	; file is a link
+   156
+   157 				; SD Command Constants *********************************************************
+   158 = 0040			CMD0		EQU	$40		; Reset SD-Card
+   159 = 0041			CMD1		EQU	CMD0 + 1	; Initialize MMC/SDC
+   160 = 0048			CMD8		EQU	CMD0 + 8	; Check voltage range
+   161 = 004D			CMD13		EQU	CMD0 + 13	;
+   162 = 0050			CMD16		EQU	CMD0 + 16	; Change block size
+   163 = 0051			CMD17		EQU	CMD0 + 17	; Read single block
+   164 = 0058			CMD24		EQU	CMD0 + 24	; Write single block
+   165 = 0077			CMD55		EQU	CMD0 + 55	; Application command prefix
+   166 = 007A			CMD58		EQU	CMD0 + 58	; Get OCR
+   167 = 0069			ACMD41		EQU	CMD0 + 41	; Initialize SDC
+   168
+   169 = 00FE			DATA_TOKEN	EQU	$FE             ; SD-Card Data Token
+   170
+   171 				; FAT Types ********************************************************************
+   172 = 0002			FAT12_Type      EQU     $02
+   173 = 0001			FAT16_Type      EQU     $01
+   174 = 0000			FAT32_Type      EQU     $00
+   175
+   176 				; Directory Descriptor (32 Bytes) **********************************************
+   177 				; Index of fields in a directory entry
+   178 = 0000			D_FILENAME      EQU     $00             	; 8 Bytes - 8 Character Filename
+   179 = 0008			D_FILEEXT       EQU     $08             	; 3 Bytes - 3 Character File Extension
+   180 = 000B			D_ATTRIBUTES    EQU     $0B             	; 1 Byte  - File Attributes
+   181 = 000E			D_CREATE_TIME   EQU     $0E             	; 2 Bytes - Creation Time
+   182 = 0010			D_CREATE_DATE	EQU	$10			; 2 Bytes - Create Date 
+   183 = 0012			D_ACCESS_DATE   EQU     $12             	; 2 Bytes - Last Accessed Date
+   184 = 0014			D_START_CLSTH   EQU     $14             	; 2 Bytes - Start Cluster High Word (FAT32)
+   185 = 0016			D_LAST_WR_TIME  EQU     $16             	; 2 Bytes - Last Write Time
+   186 = 0018			D_LAST_WR_DATE  EQU     $18             	; 2 Bytes - Last Write Date
+   187 = 001A			D_START_CLST    EQU     $1A             	; 2 Bytes - Start Cluster Low Word
+   188 = 001C			D_FILE_SIZE     EQU     $1C             	; 4 Bytes - File Size
+   189
+   190 				; FGC VPU Constants ************************************************************
+   191
+   192 				; Mode Registers
+   193 = 0080			VPU_REG0        EQU     $80           ; Mode Register 0
+   194 = 0081			VPU_REG1        EQU     VPU_REG0+1    ; Mode Register 1
+   195 = 0088			VPU_REG8        EQU     VPU_REG0+8    ; Mode Register 2
+   196 = 0089			VPU_REG9        EQU     VPU_REG0+9    ; Mode Register 3
+   197
+   198 				; Table Base Address Registers
+   199 = 0082			VPU_REG2        EQU     VPU_REG0+2    ; Pattern name table base address register
+   200 = 0083			VPU_REG3        EQU     VPU_REG0+3    ; Color table base address register low
+   201 = 008A			VPU_REG10       EQU     VPU_REG0+10   ; Color table base address register high
+   202 = 0084			VPU_REG4        EQU     VPU_REG0+4    ; Pattern generator table base address register
+   203 = 0085			VPU_REG5        EQU     VPU_REG0+5    ; Sprite attribute table base address register low
+   204 = 008B			VPU_REG11       EQU     VPU_REG0+11   ; Sprite attribute table base address register high
+   205 = 0086			VPU_REG6        EQU     VPU_REG0+6    ; Sprite pattern generator table base address register
+   206
+   207 				; Color Registers
+   208
+   209 = 0087			VPU_REG7        EQU     VPU_REG0+7    ; Text color/Back drop color register
+   210 = 008C			VPU_REG12       EQU     VPU_REG0+12   ; Text blink color/Back blink color register
+   211 = 008D			VPU_REG13       EQU     VPU_REG0+13   ; Blinking period register
+   212 = 0094			VPU_REG20       EQU     VPU_REG0+20   ; Color burst register 1
+   213 = 0095			VPU_REG21       EQU     VPU_REG0+21   ; Color burst register 2
+   214 = 0096			VPU_REG22       EQU     VPU_REG0+22   ; Color burst register 3
+   215
+   216 				; Display Registers
+   217
+   218 = 0092			VPU_REG18       EQU     VPU_REG0+18   ; Display adjust register
+   219 = 0097			VPU_REG23       EQU     VPU_REG0+23   ; Display offset register
+   220 = 0093			VPU_REG19       EQU     VPU_REG0+19   ; Interrupt line register
+   221
+   222 				; Access Registers
+   223
+   224 = 008E			VPU_REG14       EQU     VPU_REG0+14   ; VRAM Access base address register
+   225 = 008F			VPU_REG15       EQU     VPU_REG0+15   ; Status register pointer
+   226 = 0090			VPU_REG16       EQU     VPU_REG0+16   ; Color pallete address register
+   227 = 0091			VPU_REG17       EQU     VPU_REG0+17   ; Control register pointer
+   228
+   229 				; Command Registers
+   230
+   231 = 00A0			VPU_REG32       EQU     VPU_REG0+32   ; Source X low register
+   232 = 00A1			VPU_REG33       EQU     VPU_REG0+33   ; Source X high register
+   233 = 00A2			VPU_REG34       EQU     VPU_REG0+34   ; Source Y low register
+   234 = 00A3			VPU_REG35       EQU     VPU_REG0+35   ; Source Y high register
+   235
+   236 = 00A4			VPU_REG36       EQU     VPU_REG0+36   ; Destination X low register
+   237 = 00A5			VPU_REG37       EQU     VPU_REG0+37   ; Destination X high register
+   238 = 00A6			VPU_REG38       EQU     VPU_REG0+38   ; Destination Y low register
+   239 = 00A7			VPU_REG39       EQU     VPU_REG0+39   ; Destination Y high register
+   240
+   241 = 00A8			VPU_REG40       EQU     VPU_REG0+40   ; Number of dots X low register
+   242 = 00A9			VPU_REG41       EQU     VPU_REG0+41   ; Number of dots X high register
+   243 = 00AA			VPU_REG42       EQU     VPU_REG0+42   ; Number of dots Y low register
+   244 = 00AB			VPU_REG43       EQU     VPU_REG0+43   ; Number of dots Y high register
+   245
+   246 = 00AC			VPU_REG44       EQU     VPU_REG0+44   ; Color register
+   247 = 00AD			VPU_REG45       EQU     VPU_REG0+45   ; Argument register
+   248 = 00AE			VPU_REG46       EQU     VPU_REG0+46   ; Command register
+   249
+   250 				; Status Registers
+   251
+   252 = 0000			VPU_STAT0       EQU     0             ; Status register 0
+   253 = 0001			VPU_STAT1       EQU     1             ; Status register 1
+   254 = 0002			VPU_STAT2       EQU     2             ; Status register 2
+   255 = 0003			VPU_STAT3       EQU     3             ; Status register 3
+   256 = 0004			VPU_STAT4       EQU     4             ; Status register 4
+   257 = 0005			VPU_STAT5       EQU     5             ; Status register 5
+   258 = 0006			VPU_STAT6       EQU     6             ; Status register 6
+   259 = 0007			VPU_STAT7       EQU     7             ; Status register 7
+   260 = 0008			VPU_STAT8       EQU     8             ; Status register 8
+   261 = 0009			VPU_STAT9       EQU     9             ; Status register 9
+   262
+   263 				; Basic Mode Settings
+   264
+   265 = 0000			VPU_MODE_REG0   EQU     $00           ; DG = 0, IE2 = 0, IE1 = 0, M3..5 = xxx
+   266 = 0042			VPU_MODE_REG1   EQU     $42           ; BL = 1, IE0 = 0, M1..2 = xx, SI = 1, MA = 0,
+   267 = 000A			VPU_MODE_REG2   EQU     $0A           ; MS = 0, LP = 0, CB = 0, VR = 1, SPD = 1, BW = 0
+   268 = 0002			VPU_MODE_REG3   EQU     $02           ; LN = 0, S1 = 0, S0 = 0, IL = 0, E = 0,NT = 1, DC = 0
+   269
+   270 = 0010			VPU_MODE0       EQU     $10
+   271 = 0012			VPU_MODE1       EQU     $12
+   272 = 0003			VPU_MODE4       EQU     $03
+   273 = 0004			VPU_MODE5       EQU     $04
+   274 = 0005			VPU_MODE6       EQU     $05
+   275 = 0007			VPU_MODE7       EQU     $07
+   276
+   277 						
+    43 						ICL "jc2_bios_calls.inc"	; JC2 BIOS routines
+Source: jc2_bios_calls.inc
+     1 				;-------------------------------------------------
+     2 				; JC2 BIOS Calls, checked for: V1.2.5
+     3 				; Assembler: MADS-Assembler
+     4 				;-------------------------------------------------
+     5
+     6 = B000			LAB_COLD	=	$B000			; BASIC cold START
+     7 = E000			MON_COLD_START  EQU     $E000
+     8 = E003			MON_WARM_START  EQU     $E003
+     9 = E006			SWITCH_TO_RAM	EQU	$E006			; Switch Basic to RAM Page ($B000-$DFFF)
+    10 = E00A			SWITCH_TO_ROM	EQU	$E00A			; Switch Basic to ROM Page ($B000-$DFFF)
+    11 = E00E			_NO_HANDLER_	EQU	$E00E			; Just RTS
+    12 = E047			CIN             EQU     $E047
+    13 = E052			COUT            EQU     $E052
+    14 = E05A			CROUT           EQU     $E05A
+    15 = E05E			SPCOUT          EQU     $E05E
+    16 = E062			STRIN           EQU     $E062
+    17 = E083			STROUT          EQU     $E083
+    18 = E085			WRSTR           EQU     $E085
+    19 = E091			HEXOUT          EQU     $E091
+    20 = E09A			HEXDIG          EQU     $E09A
+    21 = E0B5			CLRSCRN         EQU     $E0B5
+    22 = E0BD			DEC2STR         EQU     $E0BD
+    23 = E0BA			CMDDEV          EQU     $E0BA
+    24 = E1A7			ADD_DEVICE	EQU	$E1A7
+    25 = E14D			DELAY		EQU	$E14D
+    26 = E167			BEEP            EQU     $E167
+    27 = E1AA			OPEN_DEVICE     EQU     $E1AA
+    28 = E2DE			READTIME        EQU     $E2DE			; BIOS v1.2.1
+    29 = E2E2			READDATE        EQU     $E2E2			; BIOS v1.2.1
+    30
+    31 = F682			OS_STRING_OUT	EQU	$F682			; SPRINT in BIOS v1.2.1, but same routine
+    32 = F68B			INIT_BLKBUF	EQU	$F68B
+    33 = F8B5			CFWAIT		EQU	$F8B5
+    34 = F960			VPU_IRQ		EQU	$F960
+    35 = F9A0			VDP_DEV		EQU	$F9A0
+    36 = FC85			LOAD_LBA_CF	EQU	$FC85
+    37 = FD53			SET_RAMBANK	EQU	$FD53			; BIOS v1.2.4
+    38 = FD7D			MON2ROM		EQU	$FD7D			; Monitor to ROM
+    39 = FD86			MON2RAM		EQU	$FD86			; Monitor to RAM, enable RAM behind it
+    40
+    41
+    44 						
+    45 = 0200			PROG_START	EQU	$0200	      		; Program Start Address in RAM
+    46 = 0006			PS2NO_KBD       EQU     $06           		; No keyboard selected
+    47
+    48 				; ------------------------------------------------------------------------------
+    49 				; EPROM Code Size is from $0000 - $3FFF (lowest 16 KB) and from
+    50 				; $4000 - $7FFF for the highest 16 KB. Every 1 KB page is assembed to 
+    51 				; base-address FGC_BASE ($1000). The active page is selected by the 
+    52 				; 8255 PIA PORTC PC7,PC2,PC1,PC0 ($100E).
+    53 				; ------------------------------------------------------------------------------
+    54 						ORG	$0000			; Page 0, Eprom Start address
+    55 						ICL 	"b00_vpu.asm"		; VPU Driver
+Source: b00_vpu.asm
+     1 				; ------------------------------------------------------------------------------
+     2 				; Floppy/Graphics-Controller BIOS for the Junior Computer ][, by Joerg Walke.
+     3 				; ------------------------------------------------------------------------------
+     4
+     5 				;**** DRIVER CALL ENTRY TABLE **************************************************
+     6 				;*******************************************************************************
+     7 				B00_ADDR	; FGC ROM at $0000-$03FF and $4000-$43FF
+     8 1000			B00		.local,	FGC_BASE
+     9
+    10 1000 FF FF FF FF FF FF + FGC_REGISTERS	.byte	$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF  ; 16 bytes reserved space
+    11 1008 FF FF FF FF FF FF +  	        .byte	$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF  ; for FGC IO addresses
+    12 				 	        
+    13 1010 4C 00 03		FGC_INFO        JMP     $0300
+    14
+    15 1013 8D 0E 10		FGC_SET_PAGE    STA     PPI_PORTC       ; switch ROM page and call code
+    16 1016 60			                RTS
+    17 				                
+    18 1017 48			FGC_FDC_CMD     PHA                     ; save Accumulator
+    19 1018 A9 02		                LDA     #$02
+    20 101A 8D 0E 10		                STA     PPI_PORTC       ; switch to ROM page 2. Code continues in page 2
+    21 101D EA			                NOP                     ; place holder nops
+    22 101E EA			                NOP
+    23 				                
+    24 101F 48			FGC_VPU_CMD     PHA                     ; save Accumulator
+    25 1020 A9 01		                LDA     #$01
+    26 1022 8D 0E 10		                STA     PPI_PORTC       ; switch to ROM page 1. Code continues in page 1
+    27 1025 EA			                NOP                     ; place holder nops
+    28 1026 EA			                NOP
+    29 				                
+    30 1027 48			FGC_VPU_OUT     PHA                     ; save Accumulator
+    31 1028 A9 00		                LDA     #$00
+    32 102A 8D 0E 10		                STA     PPI_PORTC       ; switch to ROM page 0
+    33 102D F0 2F		                BEQ     VPU_OUT         ; branch to VPU output routine
+    34 				                
+    35 102F A9 00		_BLINK_HANDLER_ LDA     #$00
+    36 1031 8D 0E 10		                STA     PPI_PORTC       ; switch to ROM page 0
+    37 				                
+    38 				; **** DRIVER START ************************************************************
+    39
+    40 				; **** Cursor Blink Handler ****************************************************
+    41 				;
+    42 				; ******************************************************************************
+    43 				                
+    44 1034 A5 DA		                LDA     TICKCNT
+    45 1036 D0 25		                BNE     NO_HANDLER
+    46 1038 86 B9		                STX     FGC_XREG
+    47 103A 84 BA		                STY     FGC_YREG
+    48 103C A5 AA		                LDA     CURSOR_TICKS
+    49 103E 85 DA		                STA     TICKCNT
+    50 1040 20 84 11		                JSR     VPU_XY_TO_ADR
+    51 1043 20 06 11		                JSR     VPU_SET_RD_ADR
+    52 1046 AD 08 10		                LDA     VPU_PORT0
+    53 1049 48			                PHA
+    54 104A 20 09 11		                JSR     VPU_TEXT_WR_ADR
+    55 104D A5 AB		                LDA     CURSOR
+    56 104F 8D 08 10		                STA     VPU_PORT0
+    57 1052 20 09 11		                JSR     VPU_TEXT_WR_ADR
+    58 1055 68			                PLA
+    59 1056 85 AB		                STA     CURSOR
+    60 1058 A6 B9		HNDLR0          LDX     FGC_XREG
+    61 105A A4 BA		                LDY     FGC_YREG
+    62 105C 18			                CLC
+    63 105D 60			NO_HANDLER      RTS
+    64 				;
+    65 				; ******************************************************************************
+    66
+    67 				; **** VPU Driver Character Output Routine *************************************
+    68 				;
+    69 				; ******************************************************************************
+    70
+    71 105E A5 A8		VPU_OUT         LDA     VPUMODE
+    72 1060 C9 10		                CMP     #VPU_MODE0      ; is current mode a text mode?
+    73 1062 B0 02		                BCS     VPU_OUT2        ; yes, print character
+    74 1064 68			                PLA                     ; no, restore accu and exit
+    75 1065 60			                RTS
+    76 				                
+    77 1066 68			VPU_OUT2        PLA                     ; get character to print on screen
+    78 1067 48			                PHA
+    79 1068 86 B9		                STX     FGC_XREG        ; save X register
+    80 106A 84 BA		                STY     FGC_YREG        ; save Y register
+    81 106C C9 20		                CMP     #SPC            ; is it a control character?
+    82 106E B0 68		                BCS     VPU_CHAR        ; no, handle printable chars
+    83 1070 C9 0D		VPU_CR          CMP     #CR             ; Carriage Return char?
+    84 1072 D0 09		                BNE     VPU_BELL        ; no, check next char
+    85 1074 20 EE 13		                JSR     B00_1.VPU_HIDE_CURSOR
+    86 1077 A2 00		                LDX     #0
+    87 1079 86 B2		                STX     POS_X           ; reset cursor x position to 0
+    88 107B F0 77		                BEQ     VPU_CURR_ADR    ; branch always
+    89 107D C9 07		VPU_BELL        CMP	#$07		; is it the BELL character?
+    90 107F D0 06				BNE	VPU_LF          ; no, check next char
+    91 1081 20 67 E1				JSR	BEEP		; chime bell
+    92 1084 4C FA 10		                JMP     VPU_OUT_END
+    93 1087 C9 0A		VPU_LF          CMP     #LF             ; Line Feed / Down key (ASCII 10) ?
+    94 1089 D0 05		                BNE     VPU_BS          ; no, check next char
+    95 108B 20 EE 13		                JSR     B00_1.VPU_HIDE_CURSOR
+    96 108E B0 57		                BCS     VPU_DOWN
+    97 1090 C9 08		VPU_BS          CMP     #BS             ; Backspace / Left key (ASCII 8) ?
+    98 1092 D0 16		                BNE     VPU_RIGHT       ; no, check next char
+    99 1094 20 EE 13		                JSR     B00_1.VPU_HIDE_CURSOR
+   100 1097 C6 B2		VPU_LEFT        DEC     POS_X           ; move cursor one char left
+   101 1099 10 59		                BPL     VPU_CURR_ADR    ; line break? No, set VRAM address
+   102 109B A2 00		                LDX     #0              ; yes
+   103 109D A4 B4		                LDY     POS_Y           ; first line?
+   104 109F F0 05		                BEQ     VPU_SET_X       ; yes, set cursor x position to 0
+   105 10A1 C6 B4		                DEC     POS_Y           ; no, move one line up
+   106 10A3 A6 A9		                LDX     MAX_X           ; and set cursor y position to
+   107 10A5 CA			                DEX                     ; max_x-1
+   108 10A6 86 B2		VPU_SET_X       STX     POS_X
+   109 10A8 10 4A		                BPL     VPU_CURR_ADR    ; branch always
+   110 10AA C9 15		VPU_RIGHT       CMP     #RIGHT          ; Right key (ASCII 21) ?
+   111 10AC F0 25		                BEQ     VPU_HIDE_CRSR
+   112 10AE C9 0B		VPU_UP          CMP     #UP             ; Up key (ASCII 11) ?
+   113 10B0 D0 0B		                BNE     VPU_TAB
+   114 10B2 A4 B4		                LDY     POS_Y
+   115 10B4 F0 02		                BEQ     VPU_UP1
+   116 10B6 C6 B4		                DEC     POS_Y
+   117 10B8 20 EE 13		VPU_UP1         JSR     B00_1.VPU_HIDE_CURSOR
+   118 10BB B0 37		                BCS     VPU_CURR_ADR
+   119 10BD C9 09		VPU_TAB         CMP     #TAB            ; Horizontal Tab (ASCII 9) ?
+   120 10BF D0 17		                BNE     VPU_CHAR
+   121 10C1 A9 08		                LDA     #8
+   122 10C3 E6 B2		                INC     POS_X
+   123 10C5 C5 B2		VPU_TAB1        CMP     POS_X
+   124 10C7 B0 08		                BCS     VPU_TAB2
+   125 10C9 69 08		                ADC     #8
+   126 10CB C5 A9		                CMP     MAX_X
+   127 10CD 90 F6		                BCC     VPU_TAB1
+   128 10CF A5 A9		                LDA     MAX_X
+   129 10D1 85 B2		VPU_TAB2        STA     POS_X
+   130 10D3 20 EE 13		VPU_HIDE_CRSR   JSR     B00_1.VPU_HIDE_CURSOR
+   131 10D6 B0 03		                BCS     VPU_INC_X
+   132 10D8 8D 08 10		VPU_CHAR        STA     VPU_PORT0       ; printable character
+   133 10DB E6 B2		VPU_INC_X       INC     POS_X
+   134 10DD A6 B2		VPU_LINE_BREAK  LDX     POS_X
+   135 10DF E4 A9		                CPX     MAX_X           ; line break?
+   136 10E1 90 17		                BCC     VPU_OUT_END     ; no, finish
+   137 10E3 A2 00		                LDX     #0              ; carriage return
+   138 10E5 86 B2		                STX     POS_X           ; reset cursor x position to 0
+   139 10E7 E6 B4		VPU_DOWN        INC     POS_Y           ; increment cursor y position
+   140 10E9 A4 B4		                LDY     POS_Y
+   141 10EB C0 18		                CPY     #24             ; max lines reached?
+   142 10ED 90 05		                BCC     VPU_CURR_ADR    ; no, just calculate current VRAM address
+   143 10EF C6 B4		                DEC     POS_Y           ; yes
+   144 10F1 20 20 11		                JSR     VPU_SCROLL      ; scroll screen one line up
+   145 10F4 20 84 11		VPU_CURR_ADR    JSR     VPU_XY_TO_ADR   ; calculate VRAM address from cursor x-y position
+   146 10F7 20 0B 11		                JSR     VPU_SET_WR_ADR  ; set VRAM write address pointer
+   147 10FA A2 01		VPU_OUT_END     LDX     #CRSR           ; load cursor character
+   148 10FC 86 DA		                STX     TICKCNT         ; set tick counter to 1
+   149 10FE 86 AB		                STX     CURSOR          ; set character at cursor position to cursor char
+   150 1100 A6 B9		                LDX     FGC_XREG        ; restore x register
+   151 1102 A4 BA		                LDY     FGC_YREG        ; restore y register
+   152 1104 68			                PLA
+   153 1105 60			                RTS
+   154
+   155 				; **** Set VRAM Read Address ***************************************************
+   156 				;
+   157 				; Input : X - A0..A7
+   158 				;         Y - A8..A13
+   159 				;         A - A14..A16
+   160 				;
+   161 				; ******************************************************************************
+   162
+   163 1106 18			VPU_SET_RD_ADR  CLC
+   164 1107 90 03		                BCC     VPU_SET_ADR
+   165
+   166 				; **** Set Text Mode VRAM Write Address ****************************************
+   167
+   168 1109 A9 00		VPU_TEXT_WR_ADR LDA     #$00
+   169
+   170 				; **** Set VRAM Write Address **************************************************
+   171 				;
+   172 				; Input : X - A0..A7
+   173 				;         Y - A8..A13
+   174 				;         A - A14..A16
+   175 				;
+   176 				; ******************************************************************************
+   177
+   178 110B 38			VPU_SET_WR_ADR  SEC
+   179
+   180 				; **** Set VRAM Address ********************************************************
+   181 				;
+   182 				; Input : X - A0..A7
+   183 				;         Y - A8..A13
+   184 				;         A - A14..A16
+   185 				;         C - Read = 0; Write = 1
+   186 				;
+   187 				; ******************************************************************************
+   188
+   189 110C 8D 09 10		VPU_SET_ADR     STA     VPU_PORT1       ; set A14..A16
+   190 110F A9 8E		                LDA     #VPU_REG14      ; to VRAM access base address
+   191 1111 8D 09 10		                STA     VPU_PORT1
+   192 1114 8E 09 10		                STX     VPU_PORT1       ; set A0..A7
+   193 1117 98			                TYA                     ; move A8..A13 to Accu
+   194 1118 90 02		                BCC     VPU_SET_ADR1
+   195 111A 09 40		                ORA     #$40            ; set Write flag
+   196 111C 8D 09 10		VPU_SET_ADR1    STA     VPU_PORT1       ; set A8..A13 and Read/Write flag
+   197 111F 60			                RTS
+   198 				                
+   199 				; **** Scroll Text Screen One Line Up ******************************************
+   200 				;
+   201 				; ******************************************************************************
+   202
+   203 1120 A5 AD		VPU_SCROLL      LDA     PAGECNT
+   204 1122 85 BB		                STA     VARSAV
+   205 1124 A0 F0		                LDY     #240
+   206 1126 84 AC		                STY     BUFFSIZE
+   207 1128 A6 A9		                LDX     MAX_X
+   208 112A A0 00		                LDY     #$00
+   209 112C 86 B7		VPU_SCRL_LOOP   STX     FGC_ADRL
+   210 112E 84 B8		                STY     FGC_ADRH
+   211 1130 A9 00		                LDA     #$00
+   212 1132 20 06 11		                JSR     VPU_SET_RD_ADR
+   213 1135 A6 AC		                LDX     BUFFSIZE
+   214 1137 AD 08 10		VPU_RD_CHAR0    LDA     VPU_PORT0
+   215 113A 9D 00 15		                STA     RBUFF,X
+   216 113D CA			                DEX
+   217 113E D0 F7		                BNE     VPU_RD_CHAR0
+   218 1140 38			                SEC
+   219 1141 A5 B7		                LDA     FGC_ADRL
+   220 1143 E5 A9		                SBC     MAX_X
+   221 1145 AA			                TAX
+   222 1146 A5 B8		                LDA     FGC_ADRH
+   223 1148 E9 00		                SBC     #$00
+   224 114A A8			                TAY
+   225 114B A9 00		                LDA     #$00
+   226 114D 20 0B 11		                JSR     VPU_SET_WR_ADR
+   227 1150 A6 AC		                LDX     BUFFSIZE
+   228 1152 BD 00 15		VPU_WR_CHAR0    LDA     RBUFF,X
+   229 1155 8D 08 10		                STA     VPU_PORT0
+   230 1158 CA			                DEX
+   231 1159 D0 F7		                BNE     VPU_WR_CHAR0
+   232 115B 18			                CLC
+   233 115C A9 F0		                LDA     #240
+   234 115E 65 B7		                ADC     FGC_ADRL
+   235 1160 AA			                TAX
+   236 1161 A9 00		                LDA     #$00
+   237 1163 65 B8		                ADC     FGC_ADRH
+   238 1165 A8			                TAY
+   239 1166 C6 BB		                DEC     VARSAV
+   240 1168 F0 0F		                BEQ     VPU_SCRL_END
+   241 116A A5 BB		                LDA     VARSAV
+   242 116C C9 01		                CMP     #$01
+   243 116E D0 BC		                BNE     VPU_SCRL_LOOP
+   244 1170 38			                SEC
+   245 1171 A5 AC		                LDA     BUFFSIZE
+   246 1173 E5 A9		                SBC     MAX_X
+   247 1175 85 AC		                STA     BUFFSIZE
+   248 1177 D0 B3		                BNE     VPU_SCRL_LOOP
+   249 1179 A6 A9		VPU_SCRL_END    LDX     MAX_X
+   250 117B A9 20		                LDA     #' '
+   251 117D 8D 08 10		VPU_WR_CHAR1    STA     VPU_PORT0
+   252 1180 CA			                DEX
+   253 1181 D0 FA		                BNE     VPU_WR_CHAR1
+   254 1183 60			                RTS
+   255 				                
+   256 				; **** Calculate VRAM Address from Cursor X/Y Position *************************
+   257 				;
+   258 				; ******************************************************************************
+   259 				                
+   260 1184 A4 B4		VPU_XY_TO_ADR   LDY     POS_Y           ; cursor y position is index into table
+   261 1186 B9 BB 11		                LDA     VPU_ADR_START_H,Y
+   262 1189 85 BB		                STA     VARSAV
+   263 118B B9 A3 11		                LDA     VPU_ADR_START_L,Y
+   264 118E A6 A8		                LDX     VPUMODE
+   265 1190 E0 10		                CPX     #VPU_MODE0      ; 40 column mode?
+   266 1192 D0 03		                BNE     VPU_80COL       ; no, skip next step
+   267 1194 46 BB		                LSR     VARSAV          ; yes, devide start address by two
+   268 1196 6A			                ROR     
+   269 1197 18			VPU_80COL       CLC
+   270 1198 65 B2		                ADC     POS_X           ; add cursor x position
+   271 119A AA			                TAX                     ; save low byte to X
+   272 119B A9 00		                LDA     #$00
+   273 119D 65 BB		                ADC     VARSAV          ; add carry to high byte
+   274 119F A8			                TAY                     ; save high byte to Y
+   275 11A0 A9 00		                LDA     #$00            ; most significant byte is 0
+   276 11A2 60			                RTS
+   277 				                
+   278 11A3 00 50 A0 F0 40 90 + VPU_ADR_START_L .byte	$00,$50,$A0,$F0,$40,$90,$E0,$30,$80,$D0,$20,$70
+   279 11AF C0 10 60 B0 00 50 +                 .byte	$C0,$10,$60,$B0,$00,$50,$A0,$F0,$40,$90,$E0,$30
+   280 11BB 00 00 00 00 01 01 + VPU_ADR_START_H .byte	$00,$00,$00,$00,$01,$01,$01,$02,$02,$02,$03,$03
+   281 11C7 03 04 04 04 05 05 +                 .byte	$03,$04,$04,$04,$05,$05,$05,$05,$06,$06,$06,$07
+   282 				                
+   283 				; ******************************************************************************
+   284 				                
+   285 11D3			VPU_SET_STR     ;STX     FGC_ADRL
+   286 				                ;STY     FGC_ADRH
+   287 				                
+   288 11D3 60			                RTS
+   289
+   290 				; ******************************************************************************
+   291 						.endl
+   292 01D4					ORG	$03D0		; address in EPROM
+   293 13D0			B00_0		.local,	$13D0
+   294 13D0 4C D3 11		VPU_CLRLINE     JMP     B00.VPU_SET_STR
+   295 				                
+   296 				; **** Set Text Cursor To X/Y Position *****************************************
+   297 				;
+   298 				; Input: X = Cursor X Position (0..39/79) ; Y = Cursor Y Position (0..23)
+   299 				;
+   300 				; ******************************************************************************
+   301 						.endl
+   302 03D3					ORG	$03D8		; address in EPROM
+   303 13D8			B00_1		.local,	$13D8
+   304
+   305 13D8 20 EE 13		VPU_SETCURSOR   JSR     B00_1.VPU_HIDE_CURSOR
+   306 13DB E4 A9		                CPX     MAX_X
+   307 13DD B0 0E		                BCS     VPU_SETCRSR_END
+   308 13DF C0 18		                CPY     #24
+   309 13E1 B0 0A		                BCS     VPU_SETCRSR_END
+   310 13E3 86 B2		                STX     POS_X
+   311 13E5 84 B4		                STY     POS_Y
+   312 13E7 20 84 11		                JSR     B00.VPU_XY_TO_ADR
+   313 13EA 4C 0B 11		                JMP     B00.VPU_SET_WR_ADR
+   314 13ED 60			VPU_SETCRSR_END RTS
+   315
+   316 				; **** Hide Cursor *************************************************************
+   317
+   318 13EE A5 AB		VPU_HIDE_CURSOR LDA     CURSOR          ; check if cursor is visible
+   319 13F0 C9 01		                CMP     #CRSR
+   320 13F2 F0 03		                BEQ     VPU_HIDE_END    ; no, just exit
+   321 13F4 8D 08 10		                STA     VPU_PORT0       ; yes, write current saved char back to screen
+   322 13F7 38			VPU_HIDE_END    SEC                     ; set carry for easy branches
+   323 13F8 60			                RTS
+   324
+   325 				      		.endl
+   326 03F9					ORG	$03FF		; address in EPROM
+   327 13FF					.local,	$13FF
+   328 13FF 00			                BRK
+   329 						.endl
+    56
+    57 0400					ORG	$0400			; Page 1
+    58 0400					ICL 	"b01_vpu_cmd.asm"	; VPU Command Driver
+Source: b01_vpu_cmd.asm
+     1 				; ------------------------------------------------------------------------------
+     2 				; Floppy/Graphics-Controller BIOS for the Junior Computer ][, by Joerg Walke.
+     3 				;
+     4 				; Driver Call Entry Table, part of the Floppy-/Graphics-Controller (FGC) ROM
+     5 				; ------------------------------------------------------------------------------
+     6
+     7 0400			B01_ADDR	; FGC ROM at $0400-$07FF and $4400-$47FF, size 1024 Bytes
+     8 1000			B01		.local, FGC_BASE
+     9
+    10 1000 FF FF FF FF FF FF + FGC_REGISTERS	.byte	$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF  ; 16 bytes reserved space
+    11 1008 FF FF FF FF FF FF +  	        .byte	$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF  ; for FGC IO addresses
+    12 				 	        
+    13 1010 4C 00 03		FGC_INFO        JMP     $0300
+    14
+    15 1013 8D 0E 10		FGC_SET_PAGE    STA     PPI_PORTC       ; switch ROM page and call code
+    16 1016 60			                RTS
+    17 				                
+    18 1017 48			FGC_FDC_CMD     PHA                     ; save Accumulator
+    19 1018 A9 02		                LDA     #$02
+    20 101A 8D 0E 10		                STA     PPI_PORTC       ; switch to ROM page 2. Code continues in page 2
+    21 101D EA			                NOP                     ; place holder nops
+    22 101E EA			                NOP
+    23 				                
+    24 101F 48			FGC_VPU_CMD     PHA                     ; save Accumulator
+    25 1020 A9 01		                LDA     #$01
+    26 1022 8D 0E 10		                STA     PPI_PORTC       ; switch to ROM page 1
+    27 1025 D0 0D		                BNE     VPU_CMD         ; branch to VPU command routine
+    28
+    29 1027 48			FGC_VPU_OUT     PHA                     ; save Accumulator
+    30 1028 A9 00		                LDA     #$00
+    31 102A 8D 0E 10		                STA     PPI_PORTC       ; switch to ROM page 0. Code continues in page 0
+    32 102D EA			                NOP                     ; place holder nops
+    33 102E EA			                NOP
+    34 				                
+    35 102F A9 00		_BLINK_HANDLER_ LDA     #$00
+    36 1031 8D 0E 10		                STA     PPI_PORTC       ; switch to ROM page 0. Code continues on page 0
+    37
+    38 				; **** DRIVER START ************************************************************
+    39 				;
+    40 				; ******************************************************************************
+    41
+    42 				; **** VPU Driver Command Routine **********************************************
+    43
+    44 				; Input : A - command byte
+    45 				;         X - command data byte low
+    46 				;         Y - command data byte high
+    47
+    48 				; ******************************************************************************
+    49
+    50 1034 68			VPU_CMD		PLA
+    51 1035 48			                PHA
+    52 1036 C9 10		VPU_TXT_CMD     CMP	#16
+    53 1038 B0 14				BCS     VPU_GRAPH_CMD
+    54 103A 84 FD		VPU_CMD2	STY	YSAV
+    55 103C 0A					ASL	
+    56 103D A8					TAY
+    57 103E B9 5B 10				LDA	VPU_CMD_TABLE,Y
+    58 1041 85 EA				STA	PSTRL
+    59 1043 B9 5C 10				LDA	VPU_CMD_TABLE+1,Y
+    60 1046 85 EB				STA	PSTRH
+    61 1048 68					PLA
+    62 1049 A4 FD				LDY	YSAV
+    63 104B 6C EA 00				JMP     (PSTR)
+    64 104E			VPU_GRAPH_CMD 
+    65 104E 4A 4A 4A 4A			:4  	LSR
+    66 1052 18			                CLC
+    67 1053 69 0B		                ADC     #11
+    68 1055 C9 14		                CMP     #20
+    69 1057 90 E1		                BCC     VPU_CMD2
+    70 1059 68			                PLA
+    71 105A 60			VPU_CMD_END	RTS
+    72
+    73 105B 4F 13 4C 13 5A 10 + VPU_CMD_TABLE	.word	VPU_INIT,VPU_IDENTIFY,VPU_CMD_END,VPU_CMD_END,VPU_CMD_END,VPU_HOME
+    74 1067 CB 13 54 13 0B 12 + 		.word	B01_0.VPU_CLRLINE,VPU_CLRSCRN,VPU_GOTO_XY,VPU_CURSOR_ON_OFF,VPU_COLOR
+    75 1071 E6 11 F0 11 A5 10 + 		.word   VPU_TEXTCOLOR,VPU_BACKCOLOR,VPU_STD_COLOR,VPU_CMD_END,VPU_SET_MODE
+    76 107B 2E 13 53 12 C0 12 + 		.word   VPU_PIXEL,VPU_FRAME_RECT,VPU_LINE,VPU_FILL_RECT
+    77 				                
+    78 				; **** Write To VPU Register ***************************************************
+    79 				;
+    80 				; Input : A - Data
+    81 				;         X - Register Number
+    82 				;
+    83 				; ******************************************************************************
+    84
+    85 1083 8D 09 10		VPU_SET_REG     STA     VPU_PORT1
+    86 1086 8E 09 10		                STX     VPU_PORT1
+    87 1089 60			VPU_WAIT        RTS
+    88
+    89 				; **** Set VRAM Write Address **************************************************
+    90 				;
+    91 				; Input : X - A0..A7
+    92 				;         Y - A8..A13
+    93 				;         A - A14..A16
+    94 				;
+    95 				; ******************************************************************************
+    96
+    97 108A 38			VPU_SET_WR_ADR  SEC
+    98
+    99 				; **** Set VRAM Address ********************************************************
+   100 				;
+   101 				; Input : X - A0..A7
+   102 				;         Y - A8..A13
+   103 				;         A - A14..A16
+   104 				;         C - Read = 0; Write = 1
+   105 				;
+   106 				; ******************************************************************************
+   107
+   108 108B 8D 09 10		VPU_SET_ADR     STA     VPU_PORT1       ; set A14..A16
+   109 108E A9 8E		                LDA     #VPU_REG14      ; to VRAM access base address
+   110 1090 8D 09 10		                STA     VPU_PORT1
+   111 1093 8E 09 10		                STX     VPU_PORT1       ; set A0..A7
+   112 1096 98			                TYA                     ; move A8..A13 to Accu
+   113 1097 90 02		                BCC     VPU_SET_ADR1
+   114 1099 09 40		                ORA     #$40            ; set Write flag
+   115 109B 8D 09 10		VPU_SET_ADR1    STA     VPU_PORT1       ; set A8..A13 and Read/Write flag
+   116 109E 60			                RTS
+   117 				                
+   118 				; **** Set Standard Grayscale Palette ******************************************
+   119 				;
+   120 				; ******************************************************************************
+   121
+   122 109F A2 D8		VPU_STD_GRAY    LDX     #< B01_0.COLOR_PALETTE4
+   123 10A1 A0 13		                LDY     #> B01_0.COLOR_PALETTE4
+   124 10A3 D0 04		                BNE     VPU_LD_COLPAL
+   125 				                
+   126 				; **** Set Standard Color Pallete **********************************************
+   127 				;
+   128 				; ******************************************************************************
+   129
+   130 10A5 A2 E0		VPU_STD_COLOR   LDX     #< B01_0.COLOR_PALETTE
+   131 10A7 A0 13		                LDY     #> B01_0.COLOR_PALETTE
+   132 				                
+   133 				; **** Load Color Palette ******************************************************
+   134 				;
+   135 				; Input : X - Pointer To Color Palette Low Byte
+   136 				;         Y - Pointer To Color Palette High Byte
+   137 				;
+   138 				; ******************************************************************************
+   139 				                
+   140 10A9 86 B7		VPU_LD_COLPAL   STX     FGC_ADRL
+   141 10AB 84 B8		                STY     FGC_ADRH
+   142 10AD A0 00		                LDY     #$00
+   143 10AF 98			VPU_LD_COLPAL1  TYA
+   144 10B0 4A			                LSR     
+   145 10B1 A2 90		                LDX     #VPU_REG16
+   146 10B3 20 83 10		                JSR     VPU_SET_REG
+   147 10B6 B1 B7		                LDA     (FGC_ADR),Y
+   148 10B8 8D 0A 10		                STA     VPU_PORT2
+   149 10BB C8			                INY
+   150 10BC B1 B7		                LDA     (FGC_ADR),Y
+   151 10BE 8D 0A 10		                STA     VPU_PORT2
+   152 10C1 C8			                INY
+   153 10C2 C0 20		                CPY     #$20
+   154 10C4 D0 E9		                BNE     VPU_LD_COLPAL1
+   155 10C6 60			                RTS
+   156
+   157 				; **** Set Font Bitmap *********************************************************
+   158 				;
+   159 				; Input : A,Y,X - Ptr24[A:Y:X] to Font Pattern Table
+   160 				;
+   161 				; ******************************************************************************
+   162
+   163 10C7 20 8A 10		VPU_SET_FONT    JSR     VPU_SET_WR_ADR  ; set VRAM address to $AAYYXX
+   164 10CA A9 04		                LDA     #$04            ; we need to switch to ROM page 4
+   165 10CC 4C 13 10		                JMP     FGC_SET_PAGE    ; call set font routine in page 4
+   166 				                ;RTS
+   167 				                
+   168 				; **** Set Video Mode By Number ************************************************
+   169 				;
+   170 				; Input : X - Mode Number
+   171 				;
+   172 				; ******************************************************************************
+   173
+   174 10CF 8A			VPU_SET_MODE    TXA
+   175 10D0 A2 00		                LDX     #$00
+   176 10D2 86 BB		                STX     VARSAV          ; reset IE0 mask
+   177 10D4 C9 05		                CMP     #$05            ; mode 5?
+   178 10D6 D0 06		                BNE     VPU_SET_MODES   ; no, set standard color palette
+   179 10D8 20 9F 10		                JSR     VPU_STD_GRAY    ; yes, set standard grayscale palette
+   180 10DB 4C 66 11		                JMP     VPU_SET_MODE5   ; 5 = 512 x 212 pixel, 4 colors
+   181 10DE 48			VPU_SET_MODES   PHA
+   182 10DF 20 A5 10		                JSR     VPU_STD_COLOR   ; set standard color palette
+   183 10E2 68			                PLA
+   184 10E3 C9 01		                CMP     #$01
+   185 10E5 F0 45		                BEQ     VPU_SET_MODE1   ; 1 = 80 columns, 24 lines, b/w
+   186 10E7 C9 02		                CMP     #$02
+   187 10E9 F0 13		                BEQ     VPU_SET_MODE2   ; 2 = 40 columns, 24 lines, color
+   188 10EB C9 03		                CMP     #$03
+   189 10ED F0 40		                BEQ     VPU_SET_MODE3   ; 3 = 80 columns, 24 lines, color
+   190 10EF C9 04		                CMP     #$04
+   191 10F1 F0 6F		                BEQ     VPU_SET_MODE4   ; 4 = 256 x 212 pixel, 16 colors
+   192 10F3 C9 06		                CMP     #$06
+   193 10F5 F0 73		                BEQ     VPU_SET_MODE6   ; 6 = 512 x 212 pixel, 16 colors
+   194 10F7 C9 07		                CMP     #$07
+   195 10F9 F0 73		                BEQ     VPU_SET_MODE7   ; 7 = 256 x 212 pixel, 256 colors
+   196
+   197 				                ; else                  ; 0 = 40 columns, 24 lines, b/w
+   198
+   199 				; **** Set Text Mode 1 (40 x 24 chars) *****************************************
+   200 				;
+   201 				; ******************************************************************************
+   202
+   203 10FB 38			VPU_SET_MODE0   SEC                     ; black/white mode
+   204 10FC B0 01		                BCS     VPU_TEXT_MODE1
+   205 10FE 18			VPU_SET_MODE2   CLC                     ; color mode;
+   206 10FF A9 10		VPU_TEXT_MODE1  LDA     #VPU_MODE0      ; MODE0 = 40 columns text mode
+   207 1101 20 8F 11		                JSR     VPU_SET_TXTMODE
+   208 1104 A2 28		                LDX     #40
+   209 1106 86 A9		                STX     MAX_X           ; MAX_X = 40 characters
+   210 1108 A9 04		                LDA     #$04
+   211 110A 85 AD		                STA     PAGECNT         ; 4 buffer pages (of 240 bytes)
+   212 110C A9 00		                LDA     #$00            ; #$00 for 40 columns
+   213 110E 48			                PHA
+   214 110F A0 08		                LDY     #$08            ; address 1 byte of font bitmap pointer
+   215 1111 A9 01		                LDA     #$01            ; #$01 for 40 columns
+   216 1113 A2 84		VPU_TEXT_MODE   LDX     #VPU_REG4       ; set Pattern Generator Table base address
+   217 1115 20 83 10		                JSR     VPU_SET_REG
+   218 1118 A2 00		                LDX     #$00            ; address byte 0 of font bitmap pointer
+   219 111A 8A			                TXA                     ; address byte 2 of font bitmap pointer
+   220 111B 20 C7 10		                JSR     VPU_SET_FONT    ; set font bitmap
+   221 111E 68			                PLA
+   222 111F A2 82		                LDX     #VPU_REG2       ; set Pattern Name Table base address
+   223 1121 20 83 10		                JSR     VPU_SET_REG
+   224 1124 A9 1E		                LDA     #30             ; standard cursor blink time 30ms on/off
+   225 1126 20 9C 13		                JSR     VPU_CURSOR_ON
+   226 1129 4C 54 13		                JMP     VPU_CLRSCRN
+   227
+   228 				; **** Set Text Mode 2 (80 x 24 chars) *****************************************
+   229 				;
+   230 				; ******************************************************************************
+   231
+   232 112C 38			VPU_SET_MODE1   SEC                     ; black/white mode
+   233 112D B0 01		                BCS     VPU_TEXT_MODE2
+   234 112F 18			VPU_SET_MODE3   CLC                     ; color mode;
+   235 1130 A9 12		VPU_TEXT_MODE2  LDA     #VPU_MODE1      ; MODE1 = 80 columns
+   236 1132 20 8F 11		                JSR     VPU_SET_TXTMODE
+   237 1135 A2 50		                LDX     #80
+   238 1137 86 A9		                STX     MAX_X           ; MAX_X = 80 characters
+   239 1139 A9 08		                LDA     #$08
+   240 113B 85 AD		                STA     PAGECNT         ; 8 buffer pages (of 240 bytes)
+   241 113D A9 F0		                LDA     #$F0
+   242 113F A2 8C		                LDX     #VPU_REG12      ; set blink Text/Back Color
+   243 1141 20 83 10		                JSR     VPU_SET_REG
+   244 1144 A9 00		                LDA     #$00
+   245 1146 A2 8D		                LDX     #VPU_REG13      ; set blink on/off time
+   246 1148 20 83 10		                JSR     VPU_SET_REG
+   247 114B A9 2F		                LDA     #$2F
+   248 114D A2 83		                LDX     #VPU_REG3
+   249 114F 20 83 10		                JSR     VPU_SET_REG     ; set Color Table base low address
+   250 1152 A9 00		                LDA     #$00
+   251 1154 A2 8A		                LDX     #VPU_REG10
+   252 1156 20 83 10		                JSR     VPU_SET_REG     ; set Color Table base high address
+   253 1159 A9 03		                LDA     #$03            ; #$03 for 80 columns
+   254 115B 48			                PHA
+   255 115C A0 10		                LDY     #$10            ; address byte 1 of font bitmap pointer
+   256 115E A9 02		                LDA     #$02            ; #$02 for 80 columns
+   257 1160 D0 B1		                BNE     VPU_TEXT_MODE
+   258
+   259 				; **** Set Graphic Mode 4 (256 x 212 pixel, 16 colors) *************************
+   260 				;
+   261 				; ******************************************************************************
+   262
+   263 1162 A9 03		VPU_SET_MODE4   LDA     #VPU_MODE4
+   264 1164 D0 0A		                BNE     VPU_SET_GMODE
+   265
+   266 				; **** Set Graphic Mode 5 (512 x 212 pixel, 4 colors) **************************
+   267 				;
+   268 				; ******************************************************************************
+   269
+   270 1166 A9 04		VPU_SET_MODE5   LDA     #VPU_MODE5
+   271 1168 D0 06		                BNE     VPU_SET_GMODE
+   272
+   273 				; **** Set Graphic Mode 6 (512 x 212 pixel, 16 colors) *************************
+   274 				;
+   275 				; ******************************************************************************
+   276
+   277 116A A9 05		VPU_SET_MODE6   LDA     #VPU_MODE6
+   278 116C D0 02		                BNE     VPU_SET_GMODE
+   279
+   280 				; **** Set Graphic Mode 7 (256 x 212 pixel, 256 colors) ************************
+   281 				;
+   282 				; ******************************************************************************
+   283
+   284 116E A9 07		VPU_SET_MODE7   LDA     #VPU_MODE7
+   285 1170 18			VPU_SET_GMODE   CLC                     ; CLC = color; SEC = black/white mode
+   286 1171 20 97 11		                JSR     VPU_SET_VMODE
+   287 1174 A9 1F		                LDA     #$1F
+   288 1176 A2 82		                LDX     #VPU_REG2       ; set Pattern Name Table base address
+   289 1178 20 83 10		                JSR     VPU_SET_REG
+   290 117B A9 00		                LDA     #$00
+   291 117D A2 87		                LDX     #VPU_REG7
+   292 117F 20 83 10		                JSR     VPU_SET_REG     ; set Back Color
+   293 1182 A9 0E		                LDA     #< _NO_HANDLER_
+   294 1184 8D 26 1A		                STA     NKEY_HANDLER
+   295 1187 A9 E0		                LDA     #> _NO_HANDLER_
+   296 1189 8D 27 1A		                STA     NKEY_HANDLER+1
+   297 118C 4C 54 13		                JMP     VPU_CLRSCRN
+   298
+   299 				; **** Set Video Mode **********************************************************
+   300 				;
+   301 				; Input : A - Mode
+   302 				;         C = 0 Color Mode; C = 1 Black/White Mode
+   303 				;
+   304 				; ******************************************************************************
+   305
+   306 118F A6 14		VPU_SET_TXTMODE LDX     IOBASE          ; IO board installed?
+   307 1191 D0 04		                BNE     VPU_SET_VMODE   ; yes, normal setup
+   308 1193 A2 20		                LDX     #$20            ; no, set VPU line interrupt as tick interrupt
+   309 1195 86 BB		                STX     VARSAV
+   310
+   311 1197 85 A8		VPU_SET_VMODE   STA     VPUMODE
+   312 1199 08			                PHP                     ; save carry flag (color) onto stack
+   313 119A 08			                PHP                     ; save carry flag (color) onto stack (again)
+   314 119B 48			                PHA                     ; save accu (mode) onto stack
+   315 119C 0A			                ASL     
+   316 119D 29 0F		                AND     #$0F            ; mask mode flags
+   317 119F 09 00		                ORA     #VPU_MODE_REG0  ; set mode flags M3..M5
+   318 11A1 A2 80		                LDX     #VPU_REG0
+   319 11A3 20 83 10		                JSR     VPU_SET_REG     ; set Mode Register 0
+   320 11A6 68			                PLA                     ; restore mode into accu
+   321 11A7 29 18		                AND     #$18            ; mask mode flags
+   322 11A9 09 42		                ORA     #VPU_MODE_REG1  ; set mode flags M1..M2
+   323 11AB 05 BB		                ORA     VARSAV          ; set IE0 flag if needed
+   324 11AD A2 81		                LDX     #VPU_REG1
+   325 11AF 20 83 10		                JSR     VPU_SET_REG     ; set Mode Register 1
+   326 11B2 A9 0A		                LDA     #VPU_MODE_REG2
+   327 11B4 6A			                ROR     
+   328 11B5 28			                PLP
+   329 11B6 2A			                ROL                     ; get carry flag into BW bit
+   330 11B7 A2 88		                LDX     #VPU_REG8
+   331 11B9 20 83 10		                JSR     VPU_SET_REG     ; set Mode Register 2
+   332 11BC A9 02		                LDA     #VPU_MODE_REG3
+   333 11BE A4 A8		                LDY     VPUMODE
+   334 11C0 C0 10		                CPY     #VPU_MODE0
+   335 11C2 B0 02		                BCS     VPU_TEXTMODE
+   336 11C4 09 80		                ORA     #$80            ; set 212 lines graphics mode
+   337 11C6 A2 89		VPU_TEXTMODE    LDX     #VPU_REG9
+   338 11C8 20 83 10		                JSR     VPU_SET_REG     ; set Mode Register 3
+   339 11CB A9 00		                LDA     #$00
+   340 11CD A2 AD		                LDX     #VPU_REG45
+   341 11CF 20 83 10		                JSR     VPU_SET_REG     ; switch to VPU video RAM
+   342 11D2 28			                PLP                     ; restore carry flag
+   343 11D3 90 04		                BCC     VPU_COLOR_MODE
+   344 11D5 A9 F0		                LDA     #$F0            ; Text Color = White; Background Color = Black
+   345 11D7 D0 02		                BNE     VPU_SET_COLOR
+   346 11D9 A9 D2		VPU_COLOR_MODE  LDA     #$D2            ; Text Color = Yellow; Background Color = Dark Blue
+   347
+   348 				; **** Set Text And Background Color *******************************************
+   349 				;
+   350 				; Input: AH = Text Color Index; AL = Background Color Index
+   351 				;
+   352 				; ******************************************************************************
+   353
+   354 11DB 85 AE		VPU_SET_COLOR   STA     TXTCOLOR
+   355 11DD 8D 09 10		                STA     VPU_PORT1
+   356 11E0 A9 87		                LDA     #VPU_REG7
+   357 11E2 8D 09 10		                STA     VPU_PORT1
+   358 11E5 60			                RTS
+   359 				                
+   360 				; **** Set Text Color **********************************************************
+   361 				;
+   362 				; Input: X = Text Color Index
+   363 				;
+   364 				; ******************************************************************************
+   365
+   366 11E6 8A			VPU_TEXTCOLOR   TXA
+   367 11E7 0A 0A 0A 0A		        :4      ASL                     ; clip to 16 colors and shift to upper nibble
+   368 11EB 48			                PHA                     ; and save accu
+   369 11EC A9 0F		                LDA     #$0F            ; set text color mask
+   370 11EE D0 06		                BNE     VPU_SAVE_COLOR
+   371
+   372 				; **** Set Background Color ****************************************************
+   373 				;
+   374 				; Input: X = Background Color Index
+   375 				;
+   376 				; ******************************************************************************
+   377
+   378 11F0 8A			VPU_BACKCOLOR   TXA
+   379 11F1 29 0F		                AND     #$0F            ; clip to 16 colors
+   380 11F3 48			                PHA                     ; and save accu
+   381 11F4 A9 F0		                LDA     #$F0            ; set background color mask
+   382 11F6 25 AE		VPU_SAVE_COLOR  AND     TXTCOLOR        ; clear masked color part
+   383 11F8 85 AE		                STA     TXTCOLOR
+   384 11FA 68			                PLA                     ; restore accu
+   385 11FB 05 AE		                ORA     TXTCOLOR        ; combine text and background color
+   386 11FD 4C DB 11		                JMP     VPU_SET_COLOR
+   387 				                
+   388 				; **** Set Color ***************************************************************
+   389 				;
+   390 				; Input: X = 4/16 Color Index / 256 RGB Color (RRRGGGBB)
+   391 				;
+   392 				; ******************************************************************************
+   393
+   394 1200 86 AF		VPU_COLOR       STX     COLOR
+   395 1202 8E 09 10		                STX     VPU_PORT1
+   396 1205 A9 AC		                LDA     #VPU_REG44
+   397 1207 8D 09 10		                STA     VPU_PORT1
+   398 120A 60			                RTS
+   399 				                
+   400 				; **** Set Graphics Pen or Cursor Position *************************************
+   401 				;
+   402 				; Input: X = X-Coordinate  Bit(7..0)
+   403 				;        Y = Y-Coordinate  Bit(7..0)
+   404 				;
+   405 				; ******************************************************************************
+   406 				                
+   407 120B A5 A8		VPU_GOTO_XY     LDA     VPUMODE
+   408 120D C9 10		                CMP     #$10
+   409 120F 90 03		                BCC     VPU_MOVE_TO
+   410 1211 4C D3 13		                JMP     B01_0.VPU_SETCURSOR
+   411 				                
+   412 				; **** Set Graphics Pen Position ***********************************************
+   413 				;
+   414 				; Input: X = X-Coordinate  Bit(7..0)
+   415 				;        Y = Y-Coordinate  Bit(7..0)
+   416 				;
+   417 				; ******************************************************************************
+   418
+   419 1214 A9 00		VPU_MOVE_TO     LDA     #$00
+   420 1216 85 B3		                STA     POS_X+1
+   421 1218 86 B2		                STX     POS_X
+   422 121A 84 B4		                STY     POS_Y
+   423 121C 60			                RTS
+   424 				                
+   425 121D 20 35 12		VPU_SET_XY      JSR     VPU_INIT_R36
+   426 1220 A5 B2		                LDA     POS_X
+   427 1222 8D 0B 10		                STA     VPU_PORT3       ; R36 - set X low byte
+   428 1225 A5 B3		                LDA     POS_X+1
+   429 1227 8D 0B 10		                STA     VPU_PORT3       ; R37 - set X high byte
+   430 122A A5 B4		                LDA     POS_Y
+   431 122C 8D 0B 10		                STA     VPU_PORT3       ; R38 - set Y low byte
+   432 122F A9 00		                LDA     #$00
+   433 1231 8D 0B 10		                STA     VPU_PORT3       ; R39 - set Y high byte to 0
+   434 1234 60			                RTS
+   435 				                
+   436 				; **** Set Indirect Register Addressing From Register #36 **********************
+   437 				                
+   438 1235 A9 24		VPU_INIT_R36    LDA     #36             ; indirect access register #36
+   439 1237 8D 09 10		                STA     VPU_PORT1
+   440 123A A9 91		                LDA     #VPU_REG17
+   441 123C 8D 09 10		                STA     VPU_PORT1
+   442 123F 60			                RTS
+   443 				                
+   444 				; **** Wait For VPU To Come Ready **********************************************
+   445
+   446 1240 A9 02		WAIT_READY      LDA     #VPU_STAT2
+   447 1242 8D 09 10		                STA     VPU_PORT1
+   448 1245 A9 8F		                LDA     #VPU_REG15
+   449 1247 8D 09 10		                STA     VPU_PORT1
+   450 124A AD 09 10		                LDA     VPU_PORT1
+   451 124D 29 01		                AND     #$01
+   452 124F D0 EF		                BNE     WAIT_READY
+   453 1251 60			                RTS
+   454
+   455 				; **** Draw Filled Rectangle ***************************************************
+   456 				;
+   457 				; Input: A = Logical Operation
+   458 				;        X = Width
+   459 				;        Y = Height
+   460 				;
+   461 				; ******************************************************************************
+   462
+   463 1252			VPU_FILL_RECT   ;STA     VARSAV
+   464 				;VPU_RECT_LINE   LDA     VARSAV
+   465 				;                JSR     VPU_HLINE
+   466 				;                DEY
+   467 				;                BEQ     VPU_END_RECT
+   468 				;                INC     POS_Y
+   469 				;                BNE     VPU_RECT_LINE
+   470 1252 60			VPU_END_RECT    RTS
+   471
+   472 				; **** Draw Framed Rectangle ***************************************************
+   473 				;
+   474 				; Input: A = Logical Operation
+   475 				;        X = Width
+   476 				;        Y = Height
+   477 				;
+   478 				; ******************************************************************************
+   479
+   480 1253 85 BB		VPU_FRAME_RECT  STA     VARSAV
+   481 1255 20 7D 12		                JSR     VPU_HLINE
+   482 1258 A5 BB		                LDA     VARSAV
+   483 125A 20 9C 12		                JSR     VPU_VLINE
+   484 125D A5 B2		                LDA     POS_X
+   485 125F 85 B9		                STA     FGC_XREG
+   486 1261 8A			                TXA
+   487 1262 18			                CLC
+   488 1263 65 B2		                ADC     POS_X
+   489 1265 B0 07		                BCS     FRAME_RECT1
+   490 1267 85 B2		                STA     POS_X
+   491 1269 A5 BB		                LDA     VARSAV
+   492 126B 20 9C 12		                JSR     VPU_VLINE
+   493 126E 98			FRAME_RECT1     TYA
+   494 126F 18			                CLC
+   495 1270 65 B4		                ADC     POS_Y
+   496 1272 90 01		                BCC     FRAME_RECT2
+   497 1274 60			                RTS
+   498 1275 85 B4		FRAME_RECT2     STA     POS_Y
+   499 1277 A5 B9		                LDA     FGC_XREG
+   500 1279 85 B2		                STA     POS_X
+   501 127B A5 BB		                LDA     VARSAV
+   502
+   503 				; **** Draw Horizontal Line ****************************************************
+   504 				;
+   505 				; Input: A = Logical Operation
+   506 				;        X = Length
+   507 				;
+   508 				; ******************************************************************************
+   509
+   510 127D 48			VPU_HLINE       PHA
+   511 127E 20 40 12		                JSR     WAIT_READY
+   512 1281 20 1D 12		                JSR     VPU_SET_XY
+   513 1284 8E 0B 10		                STX     VPU_PORT3       ; R40 - set DX low byte
+   514 1287 8D 0B 10		                STA     VPU_PORT3       ; R41 - set DX high byte to 0
+   515 128A 8D 0B 10		                STA     VPU_PORT3       ; R42 - set DY low byte to 0
+   516 128D 8D 0B 10		                STA     VPU_PORT3       ; R43 - set DY high byte to 0
+   517 1290 A5 AF		                LDA     COLOR
+   518 1292 8D 0B 10		                STA     VPU_PORT3       ; R44 - set color
+   519 1295 A9 00		                LDA     #$00
+   520 1297 8D 0B 10		                STA     VPU_PORT3       ; R45 - set arguments
+   521 129A F0 1D		                BEQ     VPU_LINE_CMD
+   522
+   523 				; **** Draw Vertical Line ******************************************************
+   524 				;
+   525 				; Input: A = Logical Operation
+   526 				;        Y = Y-Coordinate  Bit(7..0)
+   527 				;
+   528 				; ******************************************************************************
+   529
+   530 129C 48			VPU_VLINE       PHA
+   531 129D 20 40 12		                JSR     WAIT_READY
+   532 12A0 20 1D 12		                JSR     VPU_SET_XY
+   533 12A3 8C 0B 10		                STY     VPU_PORT3       ; R40 - set DY low byte to 0
+   534 12A6 8D 0B 10		                STA     VPU_PORT3       ; R41 - set DY high byte to 0
+   535 12A9 8D 0B 10		                STA     VPU_PORT3       ; R42 - set DX low byte
+   536 12AC 8D 0B 10		                STA     VPU_PORT3       ; R43 - set DX high byte to 0
+   537 12AF A5 AF		                LDA     COLOR
+   538 12B1 8D 0B 10		                STA     VPU_PORT3       ; R44 - set color
+   539 12B4 A9 01		                LDA     #$01
+   540 12B6 8D 0B 10		                STA     VPU_PORT3       ; R45 - set arguments
+   541 12B9 68			VPU_LINE_CMD    PLA
+   542 12BA 09 70		                ORA     #$70
+   543 12BC 8D 0B 10		                STA     VPU_PORT3       ; R46 - set command
+   544 12BF 60			                RTS
+   545
+   546 				; **** Draw Line ***************************************************************
+   547 				;
+   548 				; Input: A = Logical Operation
+   549 				;        X = X-Coordinate  Bit(7..0)
+   550 				;        Y = Y-Coordinate  Bit(7..0)
+   551 				;
+   552 				; ******************************************************************************
+   553
+   554 12C0 48			VPU_LINE        PHA
+   555 12C1 86 B9		                STX     FGC_XREG
+   556 12C3 84 BA		                STY     FGC_YREG
+   557 12C5 E4 B2		                CPX     POS_X
+   558 12C7 90 08		                BCC     VPU_NEG_X
+   559 12C9 8A			                TXA
+   560 12CA E5 B2		                SBC     POS_X
+   561 12CC AA			                TAX
+   562 12CD A9 00		                LDA     #$00
+   563 12CF F0 08		                BEQ     VPU_LINE1
+   564 12D1 A5 B2		VPU_NEG_X       LDA     POS_X
+   565 12D3 38			                SEC
+   566 12D4 E5 B9		                SBC     FGC_XREG
+   567 12D6 AA			                TAX
+   568 12D7 A9 04		                LDA     #$04
+   569 12D9 85 BB		VPU_LINE1       STA     VARSAV
+   570 12DB C4 B4		                CPY     POS_Y
+   571 12DD 90 08		                BCC     VPU_NEG_Y
+   572 12DF 98			                TYA
+   573 12E0 E5 B4		                SBC     POS_Y
+   574 12E2 A8			                TAY
+   575 12E3 A9 00		                LDA     #$00
+   576 12E5 F0 08		                BEQ     VPU_LINE2
+   577 12E7 A5 B4		VPU_NEG_Y       LDA     POS_Y
+   578 12E9 38			                SEC
+   579 12EA E5 BA		                SBC     FGC_YREG
+   580 12EC A8			                TAY
+   581 12ED A9 08		                LDA     #$08
+   582 12EF 05 BB		VPU_LINE2       ORA     VARSAV
+   583 12F1 4A			                LSR     
+   584 12F2 48			                PHA
+   585 12F3 86 BB		                STX     VARSAV
+   586 12F5 C4 BB		                CPY     VARSAV
+   587 12F7 90 06		                BCC     VPU_LINE3
+   588 12F9 98			                TYA
+   589 12FA 48			                PHA
+   590 12FB 8A			                TXA
+   591 12FC A8			                TAY
+   592 12FD 68			                PLA
+   593 12FE AA			                TAX
+   594 12FF 68			VPU_LINE3       PLA
+   595 1300 2A			                ROL     
+   596 1301 85 BB		                STA     VARSAV
+   597 1303 20 40 12		                JSR     WAIT_READY
+   598 1306 20 1D 12		                JSR     VPU_SET_XY
+   599 1309 8E 0B 10		                STX     VPU_PORT3       ; R40 - set DX low byte to 0
+   600 130C 8D 0B 10		                STA     VPU_PORT3       ; R41 - set DX high byte to 0
+   601 130F 8C 0B 10		                STY     VPU_PORT3       ; R42 - set DY low byte
+   602 1312 8D 0B 10		                STA     VPU_PORT3       ; R43 - set DY high byte to 0
+   603 1315 A5 AF		                LDA     COLOR
+   604 1317 8D 0B 10		                STA     VPU_PORT3       ; R44 - set color
+   605 131A A5 BB		                LDA     VARSAV
+   606 131C 8D 0B 10		                STA     VPU_PORT3       ; R45 - set arguments
+   607 131F 68			                PLA
+   608 1320 09 70		                ORA     #$70
+   609 1322 8D 0B 10		                STA     VPU_PORT3       ; R46 - set command
+   610 1325 A6 B9		                LDX     FGC_XREG
+   611 1327 A4 BA		                LDY     FGC_YREG
+   612 1329 86 B2		                STX     POS_X
+   613 132B 84 B4		                STY     POS_Y
+   614 132D 60			                RTS
+   615 				                
+   616 				; **** Draw Pixel **************************************************************
+   617 				;
+   618 				; Input: A = Logical Operation
+   619 				;        X = X-Coordinate
+   620 				;        Y = Y-Coordinate
+   621 				;
+   622 				; ******************************************************************************
+   623
+   624 132E 48			VPU_PIXEL       PHA
+   625 132F 20 35 12		                JSR     VPU_INIT_R36
+   626 1332 A9 00		                LDA     #$00
+   627 1334 8E 0B 10		                STX     VPU_PORT3       ; set X low byte
+   628 1337 8D 0B 10		                STA     VPU_PORT3       ; set X high byte
+   629 133A 8C 0B 10		                STY     VPU_PORT3       ; set Y low byte
+   630 133D 8D 0B 10		                STA     VPU_PORT3       ; set Y high byte to 0
+   631 1340 68			                PLA
+   632 1341 09 50		                ORA     #$50            ; send command PSET / LogOp
+   633 1343 8D 09 10		                STA     VPU_PORT1
+   634 1346 A9 AE		                LDA     #VPU_REG46
+   635 1348 8D 09 10		                STA     VPU_PORT1
+   636 134B 60			                RTS
+   637
+   638 				; ******************************************************************************
+   639 				                
+   640 				; ******************************************************************************
+   641
+   642 134C A9 99		VPU_IDENTIFY    LDA     #$99
+   643 134E 60			                RTS
+   644 				                
+   645 				; **** Initialize Video Processor **********************************************
+   646 				;
+   647 				; ******************************************************************************
+   648
+   649 134F A2 01		VPU_INIT        LDX     #$01
+   650 1351 20 CF 10		                JSR     VPU_SET_MODE    ; set 80 column B/W text mode
+   651
+   652 				; **** Clear Screen ************************************************************
+   653 				;
+   654 				; ******************************************************************************
+   655
+   656 1354 20 85 13		VPU_CLRSCRN     JSR     VPU_HOME        ; set VRAM address to 0 and store x/y registers
+   657 1357 A6 A8		                LDX     VPUMODE         ; current screen mode
+   658 1359 A9 20		                LDA     #SPC
+   659 135B E0 10		CLS_MODE0       CPX     #VPU_MODE0      ; 40 columns text mode?
+   660 135D 90 0C		                BCC     CLS_MODE6_7     ; graphics modes?
+   661 135F D0 04		                BNE     CLS_MODE1       ; 80 columns text mode?
+   662 1361 A0 03		                LDY     #$03
+   663 1363 A2 C0		                LDX     #$C0
+   664 1365 A0 07		CLS_MODE1       LDY     #$07
+   665 1367 A2 80		                LDX     #$80
+   666 1369 D0 0B		                BNE     CLS_LOOP
+   667 136B A9 6A		CLS_MODE6_7     LDA     #$6A
+   668 136D E0 05		                CPX     #VPU_MODE6
+   669 136F 90 01		                BCC     CLS_MODE_4_5
+   670 1371 0A			                ASL     
+   671 1372 A8			CLS_MODE_4_5    TAY
+   672 1373 A2 00		CLS_SET_ADRL    LDX     #$00
+   673 1375 8A			                TXA
+   674 1376 8D 08 10		CLS_LOOP        STA     VPU_PORT0
+   675 1379 CA			                DEX
+   676 137A E0 FF		                CPX     #$FF
+   677 137C D0 F8		                BNE     CLS_LOOP
+   678 137E 88			                DEY
+   679 137F C0 FF		                CPY     #$FF
+   680 1381 D0 F3		                BNE     CLS_LOOP
+   681 1383 F0 04		                BEQ     VPU_HOME2       ; set cursor to home position
+   682 				                
+   683 				; **** Set Cursor Position to X(0), Y(0) ***************************************
+   684 				;
+   685 				; ******************************************************************************
+   686
+   687 1385 86 B9		VPU_HOME        STX     FGC_XREG            ; save X register
+   688 1387 84 BA		                STY     FGC_YREG            ; save Y register
+   689 1389 A9 00		VPU_HOME2       LDA     #$00
+   690 138B AA			                TAX
+   691 138C 86 B2		                STX     POS_X
+   692 138E A8			                TAY
+   693 138F 84 B4		                STY     POS_Y
+   694 1391 20 8A 10		                JSR     VPU_SET_WR_ADR
+   695 1394 A6 B9		                LDX     FGC_XREG            ; restore x register
+   696 1396 A4 BA		                LDY     FGC_YREG            ; restore y register
+   697 1398 60			                RTS
+   698 				                
+   699 1399			VPU_CURSOR_ON_OFF
+   700 1399 8A			                TXA
+   701 139A F0 11		                BEQ     VPU_CURSOR_OFF
+   702
+   703 				; **** Turn Cursor On **********************************************************
+   704 				;
+   705 				; Input: A = Blink Rate in Milliseconds
+   706 				;
+   707 				; ******************************************************************************
+   708
+   709 139C 85 AA		VPU_CURSOR_ON   STA     CURSOR_TICKS
+   710 139E A9 01		                LDA     #CRSR
+   711 13A0 85 AB		                STA     CURSOR
+   712 13A2 A9 2F		                LDA     #< _BLINK_HANDLER_
+   713 13A4 8D 26 1A		                STA     NKEY_HANDLER
+   714 13A7 A9 10		                LDA     #> _BLINK_HANDLER_
+   715 13A9 8D 27 1A		                STA     NKEY_HANDLER+1
+   716 13AC 60			                RTS
+   717 				                
+   718 				; **** Turn Cursor Off *********************************************************
+   719 				;
+   720 				; ******************************************************************************
+   721 				                
+   722 13AD A9 0E		VPU_CURSOR_OFF  LDA     #< _NO_HANDLER_
+   723 13AF 8D 26 1A		                STA     NKEY_HANDLER
+   724 13B2 A9 E0		                LDA     #> _NO_HANDLER_
+   725 13B4 8D 27 1A		                STA     NKEY_HANDLER+1
+   726 				                
+   727 				; **** Hide Cursor *************************************************************
+   728
+   729 13B7 A5 AB		VPU_HIDE_CURSOR LDA     CURSOR          ; check if cursor is visible
+   730 13B9 C9 01		                CMP     #CRSR
+   731 13BB F0 03		                BEQ     VPU_HIDE_END    ; no, just exit
+   732 13BD 8D 08 10		                STA     VPU_PORT0       ; yes, write current saved char back to screen
+   733 13C0 38			VPU_HIDE_END    SEC                     ; set carry for easy branches
+   734 13C1 60			                RTS
+   735 				                
+   736 				 		.endl
+   737 07C2					ORG	B01_0.VPU_CLRLINE - FGC_BASE + B01_ADDR	; address in eeprom
+   738 13CB			B01_0		.local,	$13CB
+   739
+   740 13CB A9 00		VPU_CLRLINE     LDA     #$00
+   741 13CD 8D 0E 10		                STA     PPI_PORTC  	; switch to ROM page 0. Code continues in page 0
+   742 13D0 EA			                NOP                	; place holder nops
+   743 13D1 EA			                NOP
+   744 13D2 EA			                NOP
+   745
+   746 				; ******************************************************************************
+   747
+   748 				; **** Set Text Cursor To X/Y Position *****************************************
+   749 				;
+   750 				; Input: X = Cursor X Position (0..39/79) ; Y = Cursor Y Position (0..23)
+   751 				;
+   752 				; ******************************************************************************
+   753
+   754 13D3 A9 00		VPU_SETCURSOR   LDA     #$00
+   755 13D5 8D 0E 10		                STA     PPI_PORTC  ; switch to ROM page 0. Code continues in page 2
+   756 				                
+   757 				; **** Color Palettes **********************************************************
+   758
+   759 13D8 00 00		COLOR_PALETTE4  .byte 	$00, $00        ; 0 Black
+   760 13DA 33 03		                .byte 	$33, $03        ; 5 Dark Gray
+   761 13DC 55 05		                .byte 	$55, $05        ; A Light Gray
+   762 13DE 77 07		                .byte 	$77, $07        ; 3 White
+   763 				                
+   764 13E0 00 00		COLOR_PALETTE   .byte 	$00, $00        ; 0 Black
+   765 13E2 60 00		                .byte 	$60, $00        ; 1 Dark Red
+   766 13E4 04 00		                .byte 	$04, $00        ; 2 Dark Blue
+   767 13E6 75 00		                .byte 	$75, $00        ; 3 Purple
+   768 13E8 00 03		                .byte 	$00, $03        ; 4 Dark Green
+   769 13EA 33 03		                .byte 	$33, $03        ; 5 Dark Gray
+   770 13EC 06 00		                .byte 	$06, $00        ; 6 Blue
+   771 13EE 07 05		                .byte 	$07, $05        ; 7 Light Blue
+   772 13F0 41 02		                .byte 	$41, $02        ; 8 Brown
+   773 13F2 70 04		                .byte 	$70, $04        ; 9 Orange
+   774 13F4 55 05		                .byte 	$55, $05        ; A Light Gray
+   775 13F6 75 05		                .byte 	$75, $05        ; B Pink
+   776 13F8 00 07		                .byte 	$00, $07        ; C Green
+   777 13FA 70 07		                .byte 	$70, $07        ; D Yellow
+   778 13FC 06 07		                .byte 	$06, $07        ; E Aquamarine
+   779 13FE 77 07		                .byte 	$77, $07        ; F White
+   780
+   781 						.endl
+   782 						
+    59
+    60 						; Pages 2 & 3: Floppy Disc Controller (FDC)
+    61 0800					ORG	$0800			; Pages 2 & 3
+    62 0800					ICL 	"b02_fdc_init.asm"	; FDC, not implemented yet
+Source: b02_fdc_init.asm
+     1 				; ------------------------------------------------------------------------------
+     2 				; Floppy/Graphics-Controller BIOS for the Junior Computer ][, by Joerg Walke.
+     3 				;
+     4 				; Floppy Disc Controller, part of the Floppy-/Graphics-Controller (FGC) ROM.
+     5 				; Not implemented yet.
+     6 				; ------------------------------------------------------------------------------
+     7
+     8 0800			B02_ADDR	; ROM PAGE 2 ($0800 - $0BFF and $4800 - $4BFF), size 1 KB
+     9 1000			B02		.local, FGC_BASE
+    10
+    11 1000 FF FF FF FF FF FF +          	.byte	$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF  ; 16 bytes reserved space
+    12 1008 FF FF FF FF FF FF +  	        .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF  ; for FGC IO addresses
+    13
+    14 1010 60			                RTS
+    15 1011 EA			                NOP
+    16 1012 EA			                NOP
+    17 				                
+    18 1013 8D 0E 10		FGC_SET_PAGE_2  STA     PPI_PORTC       ; switch ROM page
+    19 1016 60			                RTS
+    20 				                
+    21 1017 48			FGC_FDC_CMD     PHA                     ; save Accumulator
+    22 1018 A9 02		                LDA     #$02
+    23 101A 8D 0E 10		                STA     PPI_PORTC       ; switch to ROM page 2. Code continues in page 2
+    24 101D D0 15		                BNE	PAGE2_X		; branch always
+    25 				                
+    26 101F 48			FGC_VPU_CMD     PHA                     ; save Accumulator
+    27 1020 A9 01		                LDA     #$01
+    28 1022 8D 0E 10		                STA     PPI_PORTC       ; switch to ROM page 1. Code continues in page 1
+    29 1025 F0 0D		                BEQ	PAGE2_X
+    30 				                
+    31 1027 48			FGC_VPU_OUT     PHA                     ; save Accumulator
+    32 1028 A9 00		                LDA     #$00
+    33 102A 8D 0E 10		                STA     PPI_PORTC       ; switch to ROM page 0
+    34 102D F0 05		                BEQ	PAGE2_X
+    35 				                
+    36 102F A9 00		_BLINK_HANDLER_ LDA     #$00
+    37 1031 8D 0E 10		                STA     PPI_PORTC       ; switch to ROM page 0
+    38 1034 68			PAGE2_X		PLA
+    39 1035 60					RTS
+    40
+    41 						.endl
+    42
+    43 0836					ORG	B02_ADDR + $0400	; Page 3
+    44 0C00			B03_ADDR	; ROM PAGE 3 ($0C00 - $0FFF and $4C00 - $4CFF), size 1 KB	
+    45 1000			B03		.local,	FGC_BASE
+    46
+    47 1000 FF FF FF FF FF FF + START         	.byte	      $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF  ; 16 bytes reserved space
+    48 1008 FF FF FF FF FF FF +  	        .byte	      $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF  ; for FGC IO addresses
+    49 				 	        
+    50 1010 60			                RTS
+    51 1011 EA			                NOP
+    52 1012 EA			                NOP
+    53 				                
+    54 1013 8D 0E 10		FGC_SET_PAGE_3  STA     PPI_PORTC       ; switch ROM page
+    55 1016 60			                RTS
+    56 				                
+    57 1017 48			FGC_FDC_CMD     PHA                     ; save Accumulator
+    58 1018 A9 02		                LDA     #$02
+    59 101A 8D 0E 10		                STA     PPI_PORTC       ; switch to ROM page 2. Code continues in page 2
+    60 101D D0 15		                BNE	PAGE3_X		; branch always
+    61 				                
+    62 101F 48			FGC_VPU_CMD     PHA                     ; save Accumulator
+    63 1020 A9 01		                LDA     #$01
+    64 1022 8D 0E 10		                STA     PPI_PORTC       ; switch to ROM page 1. Code continues in page 1
+    65 1025 F0 0D		                BEQ	PAGE3_X
+    66 				                
+    67 1027 48			FGC_VPU_OUT     PHA                     ; save Accumulator
+    68 1028 A9 00		                LDA     #$00
+    69 102A 8D 0E 10		                STA     PPI_PORTC       ; switch to ROM page 0
+    70 102D F0 05		                BEQ	PAGE3_X
+    71 				                
+    72 102F A9 00		_BLINK_HANDLER_ LDA     #$00
+    73 1031 8D 0E 10		                STA     PPI_PORTC       ; switch to ROM page 0
+    74 1034 68			PAGE3_X		PLA
+    75 1035 60					RTS
+    76
+    77 				       		.endl
+    63
+    64 0C36					ORG	$1000			; Page 4
+    65 1000					ICL 	"b04_char_tbl.asm"	; VPU Character table
+Source: b04_char_tbl.asm
+     1 				; ------------------------------------------------------------------------------
+     2 				; Floppy/Graphics-Controller BIOS for the Junior Computer ][, by Joerg Walke.
+     3 				;
+     4 				; Character Generator Table, part of the Floppy-/Graphics-Controller (FGC) ROM
+     5 				; ------------------------------------------------------------------------------
+     6
+     7 1000			B04_ADDR	; FGC ROM PAGE 4 at $1000-$1FFF and $5000-$5FFF, size 4096 bytes = 4 x 1KB ROM
+     8 1000			B04		.local, FGC_BASE
+     9
+    10 1000 FF FF FF FF FF FF +          	.byte	$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF  ; 16 bytes reserved space
+    11 1008 FF FF FF FF FF FF +  	        .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF  ; for FGC IO addresses
+    12
+    13 1010 60			                RTS
+    14 1011 EA			                NOP
+    15 1012 EA			                NOP
+    16 				                
+    17 1013 8D 0E 10		FGC_SET_PAGE_5  STA     PPI_PORTC       ; switch ROM page
+    18 1016 A0 00		                LDY     #$00
+    19 1018 84 B5		                STY     ADR_CHAR
+    20 101A A9 12		                LDA     #> B04_1.PAGE_START
+    21 101C 85 B6		                STA     ADR_CHAR+1
+    22 101E B1 B5		FONT_LOOP01     LDA     (ADR_CHAR),Y
+    23 1020 8D 08 10		                STA     VPU_PORT0
+    24 1023 C8			                INY
+    25 1024 D0 F8		                BNE     FONT_LOOP01
+    26 1026 E6 B6		                INC     ADR_CHAR+1
+    27 1028 B1 B5		FONT_LOOP02     LDA     (ADR_CHAR),Y
+    28 102A 8D 08 10		                STA     VPU_PORT0
+    29 102D C8			                INY
+    30 102E D0 F8		                BNE     FONT_LOOP02
+    31 1030 A9 05		                LDA     #$05
+    32 1032 D0 DF		                BNE     FGC_SET_PAGE_5  ; switch to ROM page 5
+    33
+    34 				; **** Character Table Part 0 **************************************************
+    35 						.endl
+    36 1034					ORG	B04_1.PAGE_START - FGC_BASE + B04_ADDR	; address in eeprom
+    37 1200			B04_1		.local,	$1200		; 512 bytes offset from page start
+    38
+    39 1200			PAGE_START
+    40 				                ; Control Code Chars
+    41
+    42 1200 00 00 00 00 00 00 +                 .byte	 $00, $00, $00, $00, $00, $00, $00, $00      ; code for char (0)
+    43 1208 F8 F8 F8 F8 F8 F8 +                 .byte	 $F8, $F8, $F8, $F8, $F8, $F8, $F8, $00      ; code for char (1) CURSOR1
+    44 1210 00 00 00 F0 10 10 +                 .byte	 $00, $00, $00, $F0, $10, $10, $10, $10      ; code for char (2)
+    45 1218 10 10 10 1C 00 00 +                 .byte	 $10, $10, $10, $1C, $00, $00, $00, $00      ; code for char (3)
+    46 1220 10 10 10 F0 00 00 +                 .byte	 $10, $10, $10, $F0, $00, $00, $00, $00      ; code for char (4)
+    47 1228 10 10 10 10 10 10 +                 .byte	 $10, $10, $10, $10, $10, $10, $10, $10      ; code for char (5)
+    48 1230 00 00 00 FC 00 00 +                 .byte	 $00, $00, $00, $FC, $00, $00, $00, $00      ; code for char (6)
+    49 1238 00 00 00 00 00 00 +                 .byte	 $00, $00, $00, $00, $00, $00, $00, $00      ; code for char (7)
+    50 1240 00 00 00 00 00 00 +                 .byte	 $00, $00, $00, $00, $00, $00, $00, $00      ; code for char (8)
+    51 1248 00 00 00 00 00 00 +                 .byte	 $00, $00, $00, $00, $00, $00, $00, $00      ; code for char (9)
+    52 1250 00 00 00 00 00 00 +                 .byte	 $00, $00, $00, $00, $00, $00, $00, $00      ; code for char (10)
+    53 1258 00 00 00 00 00 00 +                 .byte	 $00, $00, $00, $00, $00, $00, $00, $00      ; code for char (11)
+    54 1260 00 00 00 00 00 00 +                 .byte	 $00, $00, $00, $00, $00, $00, $00, $00      ; code for char (12)
+    55 1268 00 00 00 00 00 00 +                 .byte	 $00, $00, $00, $00, $00, $00, $00, $00      ; code for char (13)
+    56 1270 00 00 00 1C 10 10 +                 .byte	 $00, $00, $00, $1C, $10, $10, $10, $10      ; code for char (14)
+    57 1278 00 00 00 00 00 00 +                 .byte	 $00, $00, $00, $00, $00, $00, $00, $00      ; code for char (15)
+    58 1280 10 10 10 FC 10 10 +                 .byte	 $10, $10, $10, $FC, $10, $10, $10, $10      ; code for char (16)
+    59 1288 00 00 00 00 00 00 +                 .byte	 $00, $00, $00, $00, $00, $00, $00, $00      ; code for char (17)
+    60 1290 00 00 00 00 00 00 +                 .byte	 $00, $00, $00, $00, $00, $00, $00, $00      ; code for char (18)
+    61 1298 00 00 00 00 00 00 +                 .byte	 $00, $00, $00, $00, $00, $00, $00, $00      ; code for char (19)
+    62 12A0 00 00 00 00 00 00 +                 .byte	 $00, $00, $00, $00, $00, $00, $00, $00      ; code for char (20)
+    63 12A8 00 00 00 00 00 00 +                 .byte	 $00, $00, $00, $00, $00, $00, $00, $00      ; code for char (21)
+    64 12B0 00 00 00 FC 10 10 +                 .byte	 $00, $00, $00, $FC, $10, $10, $10, $10      ; code for char (22)
+    65 12B8 10 10 10 F0 10 10 +                 .byte	 $10, $10, $10, $F0, $10, $10, $10, $10      ; code for char (23)
+    66 12C0 00 00 00 00 00 00 +                 .byte	 $00, $00, $00, $00, $00, $00, $00, $00      ; code for char (24)
+    67 12C8 10 10 10 1C 10 10 +                 .byte	 $10, $10, $10, $1C, $10, $10, $10, $10      ; code for char (25)
+    68 12D0 10 10 10 FC 00 00 +                 .byte	 $10, $10, $10, $FC, $00, $00, $00, $00      ; code for char (26)
+    69 12D8 00 00 00 00 00 00 +                 .byte	 $00, $00, $00, $00, $00, $00, $00, $00      ; code for char (27)
+    70 12E0 00 00 00 00 00 00 +                 .byte	 $00, $00, $00, $00, $00, $00, $00, $00      ; code for char (28)
+    71 12E8 28 28 EC 00 FC 00 +                 .byte	 $28, $28, $EC, $00, $FC, $00, $00, $00      ; code for char (29)
+    72 12F0 00 00 FC 00 EC 28 +                 .byte	 $00, $00, $FC, $00, $EC, $28, $28, $28      ; code for char (30)
+    73 12F8 28 28 EC 00 EC 28 +                 .byte	 $28, $28, $EC, $00, $EC, $28, $28, $28      ; code for char (31)
+    74
+    75 				                ; Normal Text Chars
+    76
+    77
+    78 1300 00 00 00 00 00 00 +                 .byte	 $00, $00, $00, $00, $00, $00, $00, $00      ; code for char SPACE
+    79 1308 20 20 20 20 20 00 +                 .byte	 $20, $20, $20, $20, $20, $00, $20, $00      ; code for char !
+    80 1310 50 50 50 00 00 00 +                 .byte	 $50, $50, $50, $00, $00, $00, $00, $00      ; code for char "
+    81 1318 50 50 F8 50 F8 50 +                 .byte	 $50, $50, $F8, $50, $F8, $50, $50, $00      ; code for char #
+    82 1320 20 78 A0 70 28 F0 +                 .byte	 $20, $78, $A0, $70, $28, $F0, $20, $00      ; code for char $
+    83 1328 C0 C8 10 20 40 98 +                 .byte	 $C0, $C8, $10, $20, $40, $98, $18, $00      ; code for char %
+    84 1330 40 A0 A0 40 A8 90 +                 .byte	 $40, $A0, $A0, $40, $A8, $90, $68, $00      ; code for char &
+    85 1338 20 20 20 00 00 00 +                 .byte	 $20, $20, $20, $00, $00, $00, $00, $00      ; code for char '
+    86 1340 10 20 40 40 40 20 +                 .byte	 $10, $20, $40, $40, $40, $20, $10, $00      ; code for char (
+    87 1348 20 10 08 08 08 10 +                 .byte	 $20, $10, $08, $08, $08, $10, $20, $00      ; code for char )
+    88 1350 20 A8 70 20 70 A8 +                 .byte	 $20, $A8, $70, $20, $70, $A8, $20, $00      ; code for char *
+    89 1358 00 20 20 F8 20 20 +                 .byte	 $00, $20, $20, $F8, $20, $20, $00, $00      ; code for char +
+    90 1360 00 00 00 00 20 20 +                 .byte	 $00, $00, $00, $00, $20, $20, $40, $00      ; code for char ,
+    91 1368 00 00 00 F8 00 00 +                 .byte	 $00, $00, $00, $F8, $00, $00, $00, $00      ; code for char -
+    92 1370 00 00 00 00 00 00 +                 .byte	 $00, $00, $00, $00, $00, $00, $20, $00      ; code for char .
+    93 1378 00 08 10 20 40 80 +                 .byte	 $00, $08, $10, $20, $40, $80, $00, $00      ; code for char /
+    94 1380 70 88 98 A8 C8 88 +                 .byte	 $70, $88, $98, $A8, $C8, $88, $70, $00      ; code for char 0
+    95 1388 20 60 20 20 20 20 +                 .byte	 $20, $60, $20, $20, $20, $20, $70, $00      ; code for char 1
+    96 1390 70 88 08 30 40 80 +                 .byte	 $70, $88, $08, $30, $40, $80, $F8, $00      ; code for char 2
+    97 1398 70 88 08 30 08 88 +                 .byte	 $70, $88, $08, $30, $08, $88, $70, $00      ; code for char 3
+    98 13A0 10 30 50 90 F8 10 +                 .byte	 $10, $30, $50, $90, $F8, $10, $10, $00      ; code for char 4
+    99 13A8 F8 80 F0 08 08 88 +                 .byte	 $F8, $80, $F0, $08, $08, $88, $70, $00      ; code for char 5
+   100 13B0 30 40 80 F0 88 88 +                 .byte	 $30, $40, $80, $F0, $88, $88, $70, $00      ; code for char 6
+   101 13B8 F8 08 10 20 40 40 +                 .byte	 $F8, $08, $10, $20, $40, $40, $40, $00      ; code for char 7
+   102 13C0 70 88 88 70 88 88 +                 .byte	 $70, $88, $88, $70, $88, $88, $70, $00      ; code for char 8
+   103 13C8 70 88 88 78 08 10 +                 .byte	 $70, $88, $88, $78, $08, $10, $60, $00      ; code for char 9
+   104 13D0 00 00 20 00 20 00 +                 .byte	 $00, $00, $20, $00, $20, $00, $00, $00      ; code for char :
+   105 13D8 00 00 20 00 20 20 +                 .byte	 $00, $00, $20, $00, $20, $20, $40, $00      ; code for char ;
+   106 13E0 10 20 40 80 40 20 +                 .byte	 $10, $20, $40, $80, $40, $20, $10, $00      ; code for char <
+   107 13E8 00 00 F8 00 F8 00 +                 .byte	 $00, $00, $F8, $00, $F8, $00, $00, $00      ; code for char =
+   108 13F0 40 20 10 08 10 20 +                 .byte	 $40, $20, $10, $08, $10, $20, $40, $00      ; code for char >
+   109 13F8 70 88 08 10 20 00 +                 .byte	 $70, $88, $08, $10, $20, $00, $20, $00      ; code for char ?
+   110 				                
+   111 				; ROM PAGE 5 ($1400 - $17FF and $5400 - $57FF) *********************************
+   112 						.endl
+   113 1400					ORG	B04_2.START - FGC_BASE + B04_ADDR	; address in eeprom
+   114 1400			B04_2		.local,	$1400					; 1 KB offset from page start
+   115
+   116 1400 FF FF FF FF FF FF + START         	.byte	      $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF  ; 16 bytes reserved space
+   117 1408 FF FF FF FF FF FF +  	        .byte	      $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF  ; for FGC IO addresses
+   118 				 	        
+   119 1410 60			 	        RTS
+   120 1411 EA			                NOP
+   121 1412 EA			                NOP
+   122
+   123 1413 8D 0E 10		FGC_SET_PAGE_6  STA     PPI_PORTC       ; switch ROM page
+   124 1416 A0 00		                LDY     #$00
+   125 1418 84 B5		                STY     ADR_CHAR
+   126 141A A9 12		                LDA     #> B04_1.PAGE_START
+   127 141C 85 B6		                STA     ADR_CHAR+1
+   128 141E B1 B5		FONT_LOOP11     LDA     (ADR_CHAR),Y
+   129 1420 8D 08 10		                STA     VPU_PORT0
+   130 1423 C8			                INY
+   131 1424 D0 F8		                BNE     FONT_LOOP11
+   132 1426 E6 B6		                INC     ADR_CHAR+1
+   133 1428 B1 B5		FONT_LOOP12     LDA     (ADR_CHAR),Y
+   134 142A 8D 08 10		                STA     VPU_PORT0
+   135 142D C8			                INY
+   136 142E D0 F8		                BNE     FONT_LOOP12
+   137 1430 A9 06		                LDA     #$06
+   138 1432 D0 DF		                BNE     FGC_SET_PAGE_6  ; switch to ROM page 6
+   139 				                
+   140 				; **** Character Table Part 1 **************************************************
+   141
+   142 						.endl
+   143 1434					ORG	B04_3.START - FGC_BASE + B04_ADDR	; address in eeprom
+   144 1600			B04_3		.local,	$1600 					; 1536 bytes offset from page start
+   145 				                
+   146 1600 70 88 A8 B8 B0 80 + START           .byte	 $70, $88, $A8, $B8, $B0, $80, $78, $00      ; code for char @
+   147 1608 70 88 88 F8 88 88 +                 .byte	 $70, $88, $88, $F8, $88, $88, $88, $00      ; code for char A
+   148 1610 F0 88 88 F0 88 88 +                 .byte	 $F0, $88, $88, $F0, $88, $88, $F0, $00      ; code for char B
+   149 1618 70 88 80 80 80 88 +                 .byte	 $70, $88, $80, $80, $80, $88, $70, $00      ; code for char C
+   150 1620 F0 88 88 88 88 88 +                 .byte	 $F0, $88, $88, $88, $88, $88, $F0, $00      ; code for char D
+   151 1628 F8 80 80 F0 80 80 +                 .byte	 $F8, $80, $80, $F0, $80, $80, $F8, $00      ; code for char E
+   152 1630 F8 80 80 F0 80 80 +                 .byte	 $F8, $80, $80, $F0, $80, $80, $80, $00      ; code for char F
+   153 1638 70 88 80 80 98 88 +                 .byte	 $70, $88, $80, $80, $98, $88, $78, $00      ; code for char G
+   154 1640 88 88 88 F8 88 88 +                 .byte	 $88, $88, $88, $F8, $88, $88, $88, $00      ; code for char H
+   155 1648 70 20 20 20 20 20 +                 .byte	 $70, $20, $20, $20, $20, $20, $70, $00      ; code for char I
+   156 1650 08 08 08 08 88 88 +                 .byte	 $08, $08, $08, $08, $88, $88, $70, $00      ; code for char J
+   157 1658 88 90 A0 C0 A0 90 +                 .byte	 $88, $90, $A0, $C0, $A0, $90, $88, $00      ; code for char K
+   158 1660 80 80 80 80 80 80 +                 .byte	 $80, $80, $80, $80, $80, $80, $F8, $00      ; code for char L
+   159 1668 88 D8 A8 A8 88 88 +                 .byte	 $88, $D8, $A8, $A8, $88, $88, $88, $00      ; code for char M
+   160 1670 88 88 C8 A8 98 88 +                 .byte	 $88, $88, $C8, $A8, $98, $88, $88, $00      ; code for char N
+   161 1678 70 88 88 88 88 88 +                 .byte	 $70, $88, $88, $88, $88, $88, $70, $00      ; code for char O
+   162 1680 F0 88 88 F0 80 80 +                 .byte	 $F0, $88, $88, $F0, $80, $80, $80, $00      ; code for char P
+   163 1688 70 88 88 88 A8 90 +                 .byte	 $70, $88, $88, $88, $A8, $90, $68, $00      ; code for char Q
+   164 1690 F0 88 88 F0 A0 90 +                 .byte	 $F0, $88, $88, $F0, $A0, $90, $88, $00      ; code for char R
+   165 1698 70 88 80 70 08 88 +                 .byte	 $70, $88, $80, $70, $08, $88, $70, $00      ; code for char S
+   166 16A0 F8 20 20 20 20 20 +                 .byte	 $F8, $20, $20, $20, $20, $20, $20, $00      ; code for char T
+   167 16A8 88 88 88 88 88 88 +                 .byte	 $88, $88, $88, $88, $88, $88, $70, $00      ; code for char U
+   168 16B0 88 88 88 50 50 20 +                 .byte	 $88, $88, $88, $50, $50, $20, $20, $00      ; code for char V
+   169 16B8 88 88 88 A8 A8 D8 +                 .byte	 $88, $88, $88, $A8, $A8, $D8, $88, $00      ; code for char W
+   170 16C0 88 88 50 20 50 88 +                 .byte	 $88, $88, $50, $20, $50, $88, $88, $00      ; code for char X
+   171 16C8 88 88 50 20 20 20 +                 .byte	 $88, $88, $50, $20, $20, $20, $20, $00      ; code for char Y
+   172 16D0 F8 08 10 20 40 80 +                 .byte	 $F8, $08, $10, $20, $40, $80, $F8, $00      ; code for char Z
+   173 16D8 78 60 60 60 60 60 +                 .byte	 $78, $60, $60, $60, $60, $60, $78, $00      ; code for char [
+   174 16E0 00 80 40 20 10 08 +                 .byte	 $00, $80, $40, $20, $10, $08, $00, $00      ; code for char \
+   175 16E8 78 18 18 18 18 18 +                 .byte	 $78, $18, $18, $18, $18, $18, $78, $00      ; code for char ]
+   176 16F0 00 20 50 88 00 00 +                 .byte	 $00, $20, $50, $88, $00, $00, $00, $00      ; code for char ^
+   177 16F8 00 00 00 00 00 00 +                 .byte	 $00, $00, $00, $00, $00, $00, $F8, $00      ; code for char _
+   178 1700 40 20 10 00 00 00 +                 .byte	 $40, $20, $10, $00, $00, $00, $00, $00      ; code for char `
+   179 1708 00 00 70 08 78 88 +                 .byte	 $00, $00, $70, $08, $78, $88, $78, $00      ; code for char a
+   180 1710 80 80 F0 88 88 88 +                 .byte	 $80, $80, $F0, $88, $88, $88, $F0, $00      ; code for char b
+   181 1718 00 00 78 80 80 80 +                 .byte	 $00, $00, $78, $80, $80, $80, $78, $00      ; code for char c
+   182 1720 08 08 78 88 88 88 +                 .byte	 $08, $08, $78, $88, $88, $88, $78, $00      ; code for char d
+   183 1728 00 00 70 88 F8 80 +                 .byte	 $00, $00, $70, $88, $F8, $80, $78, $00      ; code for char e
+   184 1730 10 28 20 70 20 20 +                 .byte	 $10, $28, $20, $70, $20, $20, $20, $00      ; code for char f
+   185 1738 00 00 70 88 88 78 +                 .byte	 $00, $00, $70, $88, $88, $78, $08, $70      ; code for char g
+   186 1740 80 80 F0 88 88 88 +                 .byte	 $80, $80, $F0, $88, $88, $88, $88, $00      ; code for char h
+   187 1748 20 00 60 20 20 20 +                 .byte	 $20, $00, $60, $20, $20, $20, $70, $00      ; code for char i
+   188 1750 10 00 30 10 10 10 +                 .byte	 $10, $00, $30, $10, $10, $10, $90, $60      ; code for char j
+   189 1758 80 80 90 A0 C0 A0 +                 .byte	 $80, $80, $90, $A0, $C0, $A0, $90, $00      ; code for char k
+   190 1760 60 20 20 20 20 20 +                 .byte	 $60, $20, $20, $20, $20, $20, $70, $00      ; code for char l
+   191 1768 00 00 D0 A8 A8 88 +                 .byte	 $00, $00, $D0, $A8, $A8, $88, $88, $00      ; code for char m
+   192 1770 00 00 F0 88 88 88 +                 .byte	 $00, $00, $F0, $88, $88, $88, $88, $00      ; code for char n
+   193 1778 00 00 70 88 88 88 +                 .byte	 $00, $00, $70, $88, $88, $88, $70, $00      ; code for char o
+   194 1780 00 00 F0 88 88 F0 +                 .byte	 $00, $00, $F0, $88, $88, $F0, $80, $80      ; code for char p
+   195 1788 00 00 78 88 88 78 +                 .byte	 $00, $00, $78, $88, $88, $78, $08, $08      ; code for char q
+   196 1790 00 00 B8 C0 80 80 +                 .byte	 $00, $00, $B8, $C0, $80, $80, $80, $00      ; code for char r
+   197 1798 00 00 78 80 70 08 +                 .byte	 $00, $00, $78, $80, $70, $08, $F0, $00      ; code for char s
+   198 17A0 20 20 70 20 20 28 +                 .byte	 $20, $20, $70, $20, $20, $28, $10, $00      ; code for char t
+   199 17A8 00 00 88 88 88 88 +                 .byte	 $00, $00, $88, $88, $88, $88, $78, $00      ; code for char u
+   200 17B0 00 00 88 88 88 50 +                 .byte	 $00, $00, $88, $88, $88, $50, $20, $00      ; code for char v
+   201 17B8 00 00 88 88 A8 A8 +                 .byte	 $00, $00, $88, $88, $A8, $A8, $50, $00      ; code for char w
+   202 17C0 00 00 88 50 20 50 +                 .byte	 $00, $00, $88, $50, $20, $50, $88, $00      ; code for char x
+   203 17C8 00 00 88 88 88 78 +                 .byte	 $00, $00, $88, $88, $88, $78, $08, $70      ; code for char y
+   204 17D0 00 00 F8 10 20 40 +                 .byte	 $00, $00, $F8, $10, $20, $40, $F8, $00      ; code for char z
+   205 17D8 38 60 60 C0 60 60 +                 .byte	 $38, $60, $60, $C0, $60, $60, $38, $00      ; code for char {
+   206 17E0 20 20 20 20 20 20 +                 .byte	 $20, $20, $20, $20, $20, $20, $20, $00      ; code for char |
+   207 17E8 E0 30 30 18 30 30 +                 .byte	 $E0, $30, $30, $18, $30, $30, $E0, $00      ; code for char }
+   208 17F0 00 00 00 68 B0 00 +                 .byte	 $00, $00, $00, $68, $B0, $00, $00, $00      ; code for char ~
+   209 17F8 00 00 00 00 00 00 +                 .byte	 $00, $00, $00, $00, $00, $00, $00, $00      ; code for char DEL
+   210 				                
+   211 				; ROM PAGE 6 ($1800 - $1BFF and $5800 - $5BFF) *********************************
+   212
+   213 						.endl
+   214 1800					ORG	B04_4.START - FGC_BASE + B04_ADDR	; address in eeprom
+   215 1800			B04_4		.local,	$1800
+   216
+   217 1800 FF FF FF FF FF FF + START         	.byte	      $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF  ; 16 bytes reserved space
+   218 1808 FF FF FF FF FF FF +  	        .byte	      $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF  ; for FGC IO addresses
+   219 				 	        
+   220 1810 60			 	        RTS
+   221 1811 EA			                NOP
+   222 1812 EA			                NOP
+   223
+   224 1813 8D 0E 10		FGC_SET_PAGE_7  STA     PPI_PORTC       ; switch ROM page
+   225 1816 A0 00		                LDY     #$00
+   226 1818 84 B5		                STY     ADR_CHAR
+   227 181A A9 12		                LDA     #> B04_1.PAGE_START
+   228 181C 85 B6		                STA     ADR_CHAR+1
+   229 181E B1 B5		FONT_LOOP21     LDA     (ADR_CHAR),Y
+   230 1820 8D 08 10		                STA     VPU_PORT0
+   231 1823 C8			                INY
+   232 1824 D0 F8		                BNE     FONT_LOOP21
+   233 1826 E6 B6		                INC     ADR_CHAR+1
+   234 1828 B1 B5		FONT_LOOP22     LDA     (ADR_CHAR),Y
+   235 182A 8D 08 10		                STA     VPU_PORT0
+   236 182D C8			                INY
+   237 182E D0 F8		                BNE     FONT_LOOP22
+   238 1830 A9 07		                LDA     #$07
+   239 1832 D0 DF		                BNE     FGC_SET_PAGE_7  ; switch to ROM page 7
+   240
+   241 				; **** Character Table Part 2 **************************************************
+   242 				                
+   243 						.endl
+   244 1834					ORG	B04_5.START - FGC_BASE + B04_ADDR	; address in eeprom
+   245 1A00			B04_5		.local,	$1A00 	; 2560 bytes offset from page start
+   246 				                
+   247 1A00 30 48 E0 40 E0 48 + START           .byte	 $30, $48, $E0, $40, $E0, $48, $30, $00      ; code for char  
+   248 1A08 A8 50 A8 50 A8 50 +                 .byte	 $A8, $50, $A8, $50, $A8, $50, $A8, $00      ; code for char CURSOR2
+   249 1A10 00 00 00 00 60 20 +                 .byte	 $00, $00, $00, $00, $60, $20, $40, $00      ; code for char  
+   250 1A18 18 20 20 70 20 20 +                 .byte	 $18, $20, $20, $70, $20, $20, $C0, $00      ; code for char  
+   251 1A20 00 00 00 00 50 50 +                 .byte	 $00, $00, $00, $00, $50, $50, $A0, $00      ; code for char  
+   252 1A28 00 00 00 00 00 A8 +                 .byte	 $00, $00, $00, $00, $00, $A8, $00, $00      ; code for char  
+   253 1A30 20 20 70 20 20 20 +                 .byte	 $20, $20, $70, $20, $20, $20, $20, $00      ; code for char  
+   254 1A38 20 20 70 20 70 20 +                 .byte	 $20, $20, $70, $20, $70, $20, $20, $00      ; code for char  
+   255 1A40 20 50 00 00 00 00 +                 .byte	 $20, $50, $00, $00, $00, $00, $00, $00      ; code for char  
+   256 1A48 00 48 10 20 40 A8 +                 .byte	 $00, $48, $10, $20, $40, $A8, $00, $00      ; code for char  
+   257 1A50 50 20 78 80 70 08 +                 .byte	 $50, $20, $78, $80, $70, $08, $F0, $00      ; code for char  
+   258 1A58 00 10 20 40 20 10 +                 .byte	 $00, $10, $20, $40, $20, $10, $00, $00      ; code for char  
+   259 1A60 78 A0 A0 B8 A0 A0 +                 .byte	 $78, $A0, $A0, $B8, $A0, $A0, $78, $00      ; code for char  
+   260 1A68 00 00 F8 08 E8 28 +                 .byte	 $00, $00, $F8, $08, $E8, $28, $28, $28      ; code for char  
+   261 1A70 50 20 F8 10 20 40 +                 .byte	 $50, $20, $F8, $10, $20, $40, $F8, $00      ; code for char  
+   262 1A78 00 00 3C 20 2C 28 +                 .byte	 $00, $00, $3C, $20, $2C, $28, $28, $28      ; code for char  
+   263 1A80 28 28 2C 20 3C 00 +                 .byte	 $28, $28, $2C, $20, $3C, $00, $00, $00      ; code for char  
+   264 1A88 10 20 30 00 00 00 +                 .byte	 $10, $20, $30, $00, $00, $00, $00, $00      ; code for char  
+   265 1A90 00 00 00 00 60 20 +                 .byte	 $00, $00, $00, $00, $60, $20, $40, $00      ; code for char  
+   266 1A98 28 50 50 00 00 00 +                 .byte	 $28, $50, $50, $00, $00, $00, $00, $00      ; code for char  
+   267 1AA0 00 00 00 00 50 50 +                 .byte	 $00, $00, $00, $00, $50, $50, $A0, $00      ; code for char  
+   268 1AA8 00 00 30 78 78 30 +                 .byte	 $00, $00, $30, $78, $78, $30, $00, $00      ; code for char  
+   269 1AB0 00 00 00 00 70 00 +                 .byte	 $00, $00, $00, $00, $70, $00, $00, $00      ; code for char  
+   270 1AB8 00 00 00 00 FC 00 +                 .byte	 $00, $00, $00, $00, $FC, $00, $00, $00      ; code for char  
+   271 1AC0 50 A0 00 00 00 00 +                 .byte	 $50, $A0, $00, $00, $00, $00, $00, $00      ; code for char  
+   272 1AC8 00 00 FC 5C 54 00 +                 .byte	 $00, $00, $FC, $5C, $54, $00, $00, $00      ; code for char  
+   273 1AD0 50 20 78 80 70 08 +                 .byte	 $50, $20, $78, $80, $70, $08, $F0, $00      ; code for char  
+   274 1AD8 00 40 20 10 20 40 +                 .byte	 $00, $40, $20, $10, $20, $40, $00, $00      ; code for char  
+   275 1AE0 00 00 50 A8 B8 A0 +                 .byte	 $00, $00, $50, $A8, $B8, $A0, $58, $00      ; code for char  
+   276 1AE8 28 28 E8 08 F8 00 +                 .byte	 $28, $28, $E8, $08, $F8, $00, $00, $00      ; code for char  
+   277 1AF0 50 20 F8 10 20 40 +                 .byte	 $50, $20, $F8, $10, $20, $40, $F8, $00      ; code for char  
+   278 1AF8 88 00 88 50 20 20 +                 .byte	 $88, $00, $88, $50, $20, $20, $20, $00      ; code for char  
+   279 1B00 28 28 E8 08 E8 28 +                 .byte	 $28, $28, $E8, $08, $E8, $28, $28, $28      ; code for char  
+   280 1B08 20 00 20 20 20 20 +                 .byte	 $20, $00, $20, $20, $20, $20, $20, $00      ; code for char  
+   281 1B10 00 10 38 40 40 40 +                 .byte	 $00, $10, $38, $40, $40, $40, $38, $10      ; code for char  
+   282 1B18 30 48 40 E0 40 60 +                 .byte	 $30, $48, $40, $E0, $40, $60, $98, $00      ; code for char  
+   283 1B20 00 48 30 48 48 30 +                 .byte	 $00, $48, $30, $48, $48, $30, $48, $00      ; code for char  
+   284 1B28 88 50 20 70 20 70 +                 .byte	 $88, $50, $20, $70, $20, $70, $20, $00      ; code for char  
+   285 1B30 20 20 20 00 20 20 +                 .byte	 $20, $20, $20, $00, $20, $20, $20, $00      ; code for char  
+   286 1B38 78 80 70 88 70 08 +                 .byte	 $78, $80, $70, $88, $70, $08, $F0, $00      ; code for char  
+   287 1B40 00 50 00 00 00 00 +                 .byte	 $00, $50, $00, $00, $00, $00, $00, $00      ; code for char  
+   288 1B48 78 84 B4 C4 C4 B4 +                 .byte	 $78, $84, $B4, $C4, $C4, $B4, $84, $78      ; code for char  
+   289 1B50 38 08 38 38 00 00 +                 .byte	 $38, $08, $38, $38, $00, $00, $00, $00      ; code for char  
+   290 1B58 00 28 50 A0 50 28 +                 .byte	 $00, $28, $50, $A0, $50, $28, $00, $00      ; code for char  
+   291 1B60 00 00 00 F0 10 00 +                 .byte	 $00, $00, $00, $F0, $10, $00, $00, $00      ; code for char  
+   292 1B68 00 00 00 00 60 00 +                 .byte	 $00, $00, $00, $00, $60, $00, $00, $00      ; code for char  
+   293 1B70 78 84 E4 D4 E4 D4 +                 .byte	 $78, $84, $E4, $D4, $E4, $D4, $84, $78      ; code for char  
+   294 1B78 00 F8 00 00 00 00 +                 .byte	 $00, $F8, $00, $00, $00, $00, $00, $00      ; code for char  
+   295 1B80 30 48 48 30 00 00 +                 .byte	 $30, $48, $48, $30, $00, $00, $00, $00      ; code for char  
+   296 1B88 00 20 70 20 00 70 +                 .byte	 $00, $20, $70, $20, $00, $70, $00, $00      ; code for char  
+   297 1B90 60 10 20 40 70 00 +                 .byte	 $60, $10, $20, $40, $70, $00, $00, $00      ; code for char  
+   298 1B98 70 10 20 10 60 00 +                 .byte	 $70, $10, $20, $10, $60, $00, $00, $00      ; code for char  
+   299 1BA0 10 20 00 00 00 00 +                 .byte	 $10, $20, $00, $00, $00, $00, $00, $00      ; code for char  
+   300 1BA8 00 00 00 90 90 90 +                 .byte	 $00, $00, $00, $90, $90, $90, $E8, $80      ; code for char  
+   301 1BB0 00 78 D0 D0 50 50 +                 .byte	 $00, $78, $D0, $D0, $50, $50, $50, $00      ; code for char  
+   302 1BB8 00 00 00 20 00 00 +                 .byte	 $00, $00, $00, $20, $00, $00, $00, $00      ; code for char  
+   303 1BC0 00 00 00 00 00 60 +                 .byte	 $00, $00, $00, $00, $00, $60, $10, $70      ; code for char  
+   304 1BC8 20 60 20 20 20 00 +                 .byte	 $20, $60, $20, $20, $20, $00, $00, $00      ; code for char  
+   305 1BD0 30 48 30 00 78 00 +                 .byte	 $30, $48, $30, $00, $78, $00, $00, $00      ; code for char  
+   306 1BD8 00 50 28 14 28 50 +                 .byte	 $00, $50, $28, $14, $28, $50, $00, $00      ; code for char  
+   307 1BE0 00 00 FC 00 FC 00 +                 .byte	 $00, $00, $FC, $00, $FC, $00, $00, $00      ; code for char  
+   308 1BE8 28 28 28 28 28 28 +                 .byte	 $28, $28, $28, $28, $28, $28, $28, $28      ; code for char  
+   309 1BF0 28 28 2C 20 2C 28 +                 .byte	 $28, $28, $2C, $20, $2C, $28, $28, $28      ; code for char  
+   310 1BF8 20 00 20 40 80 88 +                 .byte	 $20, $00, $20, $40, $80, $88, $70, $00      ; code for char  
+   311 				                
+   312 				; ROM PAGE 7 ($1C00 - $1FFF and $5C00 - $5FFF) *********************************
+   313
+   314 						.endl
+   315 1C00					ORG	B04_6.START - FGC_BASE + B04_ADDR	; address in eeprom
+   316 1C00			B04_6		.local,	$1C00
+   317
+   318 1C00 FF FF FF FF FF FF + START         	.byte	      $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF  ; 16 bytes reserved space
+   319 1C08 FF FF FF FF FF FF +  	        .byte	      $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF  ; for FGC IO addresses
+   320 				 	        
+   321 1C10 60			 	        RTS
+   322 1C11 EA			                NOP
+   323 1C12 EA			                NOP
+   324
+   325 1C13 8D 0E 10		FGC_SET_PAGE_1  STA     PPI_PORTC       ; switch ROM page
+   326 1C16 A0 00		                LDY     #$00
+   327 1C18 84 B5		                STY     ADR_CHAR
+   328 1C1A A9 12		                LDA     #> B04_1.PAGE_START
+   329 1C1C 85 B6		                STA     ADR_CHAR+1
+   330 1C1E B1 B5		FONT_LOOP31     LDA     (ADR_CHAR),Y
+   331 1C20 8D 08 10		                STA     VPU_PORT0
+   332 1C23 C8			                INY
+   333 1C24 D0 F8		                BNE     FONT_LOOP31
+   334 1C26 E6 B6		                INC     ADR_CHAR+1
+   335 1C28 B1 B5		FONT_LOOP32     LDA     (ADR_CHAR),Y
+   336 1C2A 8D 08 10		                STA     VPU_PORT0
+   337 1C2D C8			                INY
+   338 1C2E D0 F8		                BNE     FONT_LOOP32
+   339 1C30 A9 01		                LDA     #$01
+   340 1C32 D0 DF		                BNE     FGC_SET_PAGE_1  ; switch to ROM page 1
+   341
+   342 				; **** Character Table Part 3 **************************************************
+   343 				                
+   344 						.endl
+   345 1C34					ORG	B04_7.START - FGC_BASE + B04_ADDR	; address in eeprom
+   346 1E00			B04_7		.local,	$1E00 					; $E00 bytes offset from page start
+   347 				                
+   348 1E00 40 20 70 88 F8 88 + START           .byte	 $40, $20, $70, $88, $F8, $88, $88, $00      ; code for char  
+   349 1E08 10 20 70 88 F8 88 +                 .byte	 $10, $20, $70, $88, $F8, $88, $88, $00      ; code for char  
+   350 1E10 20 50 70 88 F8 88 +                 .byte	 $20, $50, $70, $88, $F8, $88, $88, $00      ; code for char  
+   351 1E18 50 A0 70 88 F8 88 +                 .byte	 $50, $A0, $70, $88, $F8, $88, $88, $00      ; code for char  
+   352 1E20 88 00 70 88 F8 88 +                 .byte	 $88, $00, $70, $88, $F8, $88, $88, $00      ; code for char  
+   353 1E28 70 50 70 88 F8 88 +                 .byte	 $70, $50, $70, $88, $F8, $88, $88, $00      ; code for char  
+   354 1E30 78 A0 A0 F8 A0 A0 +                 .byte	 $78, $A0, $A0, $F8, $A0, $A0, $B8, $00      ; code for char  
+   355 1E38 70 88 80 80 88 70 +                 .byte	 $70, $88, $80, $80, $88, $70, $20, $30      ; code for char  
+   356 1E40 40 20 F8 80 F0 80 +                 .byte	 $40, $20, $F8, $80, $F0, $80, $F8, $00      ; code for char  
+   357 1E48 10 20 F8 80 F0 80 +                 .byte	 $10, $20, $F8, $80, $F0, $80, $F8, $00      ; code for char  
+   358 1E50 20 50 F8 80 F0 80 +                 .byte	 $20, $50, $F8, $80, $F0, $80, $F8, $00      ; code for char  
+   359 1E58 88 00 F8 80 F0 80 +                 .byte	 $88, $00, $F8, $80, $F0, $80, $F8, $00      ; code for char  
+   360 1E60 40 20 70 20 20 20 +                 .byte	 $40, $20, $70, $20, $20, $20, $70, $00      ; code for char  
+   361 1E68 10 20 70 20 20 20 +                 .byte	 $10, $20, $70, $20, $20, $20, $70, $00      ; code for char  
+   362 1E70 20 50 70 20 20 20 +                 .byte	 $20, $50, $70, $20, $20, $20, $70, $00      ; code for char  
+   363 1E78 50 00 70 20 20 20 +                 .byte	 $50, $00, $70, $20, $20, $20, $70, $00      ; code for char  
+   364 1E80 70 48 48 E8 48 48 +                 .byte	 $70, $48, $48, $E8, $48, $48, $70, $00      ; code for char  
+   365 1E88 28 50 88 C8 A8 98 +                 .byte	 $28, $50, $88, $C8, $A8, $98, $88, $00      ; code for char  
+   366 1E90 40 20 70 88 88 88 +                 .byte	 $40, $20, $70, $88, $88, $88, $70, $00      ; code for char  
+   367 1E98 10 20 70 88 88 88 +                 .byte	 $10, $20, $70, $88, $88, $88, $70, $00      ; code for char  
+   368 1EA0 20 50 70 88 88 88 +                 .byte	 $20, $50, $70, $88, $88, $88, $70, $00      ; code for char  
+   369 1EA8 50 A0 70 88 88 88 +                 .byte	 $50, $A0, $70, $88, $88, $88, $70, $00      ; code for char  
+   370 1EB0 88 70 88 88 88 88 +                 .byte	 $88, $70, $88, $88, $88, $88, $70, $00      ; code for char  
+   371 1EB8 00 88 50 20 50 88 +                 .byte	 $00, $88, $50, $20, $50, $88, $00, $00      ; code for char  
+   372 1EC0 68 90 98 A8 C8 48 +                 .byte	 $68, $90, $98, $A8, $C8, $48, $B0, $00      ; code for char  
+   373 1EC8 40 20 88 88 88 88 +                 .byte	 $40, $20, $88, $88, $88, $88, $70, $00      ; code for char  
+   374 1ED0 10 20 88 88 88 88 +                 .byte	 $10, $20, $88, $88, $88, $88, $70, $00      ; code for char  
+   375 1ED8 20 50 00 88 88 88 +                 .byte	 $20, $50, $00, $88, $88, $88, $70, $00      ; code for char  
+   376 1EE0 88 00 88 88 88 88 +                 .byte	 $88, $00, $88, $88, $88, $88, $70, $00      ; code for char  
+   377 1EE8 10 20 88 50 20 20 +                 .byte	 $10, $20, $88, $50, $20, $20, $20, $00      ; code for char  
+   378 1EF0 00 40 70 48 70 40 +                 .byte	 $00, $40, $70, $48, $70, $40, $00, $00      ; code for char  
+   379 1EF8 F0 88 88 F0 88 88 +                 .byte	 $F0, $88, $88, $F0, $88, $88, $B0, $80      ; code for char  
+   380 1F00 40 20 70 08 78 88 +                 .byte	 $40, $20, $70, $08, $78, $88, $78, $00      ; code for char  
+   381 1F08 10 20 70 08 78 88 +                 .byte	 $10, $20, $70, $08, $78, $88, $78, $00      ; code for char  
+   382 1F10 20 50 70 08 78 88 +                 .byte	 $20, $50, $70, $08, $78, $88, $78, $00      ; code for char  
+   383 1F18 50 A0 70 08 78 88 +                 .byte	 $50, $A0, $70, $08, $78, $88, $78, $00      ; code for char  
+   384 1F20 00 88 70 08 78 88 +                 .byte	 $00, $88, $70, $08, $78, $88, $78, $00      ; code for char  
+   385 1F28 30 30 70 08 78 88 +                 .byte	 $30, $30, $70, $08, $78, $88, $78, $00      ; code for char  
+   386 1F30 00 00 F0 28 78 A0 +                 .byte	 $00, $00, $F0, $28, $78, $A0, $78, $00      ; code for char  
+   387 1F38 00 00 78 80 80 78 +                 .byte	 $00, $00, $78, $80, $80, $78, $20, $30      ; code for char  
+   388 1F40 40 20 70 88 F8 80 +                 .byte	 $40, $20, $70, $88, $F8, $80, $78, $00      ; code for char  
+   389 1F48 10 20 70 88 F8 80 +                 .byte	 $10, $20, $70, $88, $F8, $80, $78, $00      ; code for char  
+   390 1F50 20 50 70 88 F8 80 +                 .byte	 $20, $50, $70, $88, $F8, $80, $78, $00      ; code for char  
+   391 1F58 00 88 70 88 F8 80 +                 .byte	 $00, $88, $70, $88, $F8, $80, $78, $00      ; code for char  
+   392 1F60 40 20 00 60 20 20 +                 .byte	 $40, $20, $00, $60, $20, $20, $70, $00      ; code for char  
+   393 1F68 10 20 00 60 20 20 +                 .byte	 $10, $20, $00, $60, $20, $20, $70, $00      ; code for char  
+   394 1F70 20 50 00 60 20 20 +                 .byte	 $20, $50, $00, $60, $20, $20, $70, $00      ; code for char  
+   395 1F78 00 50 00 60 20 20 +                 .byte	 $00, $50, $00, $60, $20, $20, $70, $00      ; code for char  
+   396 1F80 28 10 28 78 88 88 +                 .byte	 $28, $10, $28, $78, $88, $88, $70, $00      ; code for char  
+   397 1F88 28 50 00 F0 88 88 +                 .byte	 $28, $50, $00, $F0, $88, $88, $88, $00      ; code for char  
+   398 1F90 40 20 00 70 88 88 +                 .byte	 $40, $20, $00, $70, $88, $88, $70, $00      ; code for char  
+   399 1F98 10 20 00 70 88 88 +                 .byte	 $10, $20, $00, $70, $88, $88, $70, $00      ; code for char  
+   400 1FA0 20 50 00 70 88 88 +                 .byte	 $20, $50, $00, $70, $88, $88, $70, $00      ; code for char  
+   401 1FA8 50 A0 00 70 88 88 +                 .byte	 $50, $A0, $00, $70, $88, $88, $70, $00      ; code for char  
+   402 1FB0 00 88 70 88 88 88 +                 .byte	 $00, $88, $70, $88, $88, $88, $70, $00      ; code for char  
+   403 1FB8 00 20 00 F8 00 20 +                 .byte	 $00, $20, $00, $F8, $00, $20, $00, $00      ; code for char  
+   404 1FC0 00 00 68 90 A8 48 +                 .byte	 $00, $00, $68, $90, $A8, $48, $B0, $00      ; code for char  
+   405 1FC8 40 20 00 88 88 88 +                 .byte	 $40, $20, $00, $88, $88, $88, $78, $00      ; code for char  
+   406 1FD0 10 20 00 88 88 88 +                 .byte	 $10, $20, $00, $88, $88, $88, $78, $00      ; code for char  
+   407 1FD8 20 50 00 88 88 88 +                 .byte	 $20, $50, $00, $88, $88, $88, $78, $00      ; code for char  
+   408 1FE0 00 88 00 88 88 88 +                 .byte	 $00, $88, $00, $88, $88, $88, $78, $00      ; code for char  
+   409 1FE8 10 20 00 88 88 78 +                 .byte	 $10, $20, $00, $88, $88, $78, $08, $70      ; code for char  
+   410 1FF0 80 80 F0 88 88 F0 +                 .byte	 $80, $80, $F0, $88, $88, $F0, $80, $80      ; code for char  
+   411 1FF8 00 88 00 88 88 78 +                 .byte	 $00, $88, $00, $88, $88, $78, $08, $70      ; code for char  
+   412
+   413 						.endl
+   414 						
+    66 						
+    67 2000					ORG	$3C00			; Page 15
+    68 3C00					ICL 	"b15_vpu_init.asm"	; VPU Init
+Source: b15_vpu_init.asm
+     1 				; ------------------------------------------------------------------------------
+     2 				; Floppy/Graphics-Controller BIOS for the Junior Computer ][, by Joerg Walke.
+     3 				;
+     4 				; Main Driver Initialization, part of the Floppy-/Graphics-Controller (FGC) ROM
+     5 				; ------------------------------------------------------------------------------
+     6
+     7 3C00			B15_ADDR	; FGC ROM PAGE 15 at $3C00 - $3CFF and $7C00 - $7CFF, size 1 KB
+     8 0200			B15		.local, PROG_START		; in RAM
+     9
+    10 0200 FF FF FF FF FF FF + FGC_REGS	.byte	$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF  ; 16 bytes reserved space
+    11 0208 FF FF FF FF FF FF +  	        .byte	$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF  ; for FGC IO addresses
+    12
+    13 				; **** Main Initialisation Of The Floppy-/Graphics-Controller *******************
+    14
+    15 0210 78			FGC_INIT        SEI			; JC2 address in ROM: $1010
+    16 0211 A2 60		                LDX     #< VPU_IRQ   	; install interrupt handler
+    17 0213 8E 7E 1A		                STX     IRQVECT
+    18 0216 A2 F9		                LDX     #> VPU_IRQ
+    19 0218 8E 7F 1A		                STX     IRQVECT+1
+    20 021B 58			                CLI
+    21 021C A2 A0		                LDX     #< VDP_DEV
+    22 021E A0 F9		                LDY     #> VDP_DEV
+    23 0220 20 A7 E1		                JSR     ADD_DEVICE      ; add VDP and PS/2 Keyboard driver
+    24 0223 85 C9		                STA     DEVID           ; store device ID
+    25 0225 A2 00		                LDX     #< B15_1.FGC_PRINT_INFO
+    26 0227 A0 03		                LDY     #> B15_1.FGC_PRINT_INFO
+    27 0229 8E 00 1A		                STX     IO_INFO      	; set pointer to card info routine
+    28 022C 8C 01 1A		                STY     IO_INFO+1
+    29 022F AD 06 10		FGC_READ_DIP_SW LDA     FGC_START_CONF  ; release microcontroller data port for reading
+    30 0232 20 6F 02		                JSR     FGC_WAIT        ; and wait for some microseconds
+    31 0235 A9 92		                LDA     #$92            ; set Port A = Input; Port B = Input; Port C = Output
+    32 0237 8D 0F 10		                STA     PPI_CONTROL
+    33 023A A9 BF		                LDA     #$BF            ; set Port C pin 6 = L to enable DIP switch reading
+    34 023C 8D 0E 10		                STA     PPI_PORTC
+    35 023F AD 0C 10		                LDA     PPI_PORTA       ; load dip switch settings
+    36 0242 AA			                TAX                     ; save DIP switch settings to X
+    37 0243 AD 07 10		                LDA     FGC_END_CONF    ; read keyboard layout and reset microcontroller data port for writing
+    38 0246 20 6F 02		                JSR     FGC_WAIT        ; and wait for some microseconds
+    39 0249 A9 B2		                LDA     #$B2            ; set Port A to handshake input mode and Port B to input mode
+    40 024B 8D 0F 10		                STA     PPI_CONTROL
+    41 024E A9 0D		                LDA     #$0D            ; set Port C pin 6 = H to disable DIP switch reading
+    42 0250 8D 0F 10		                STA     PPI_CONTROL
+    43 0253 8A			                TXA                     ; reload DIP switch settings from X to A
+    44 0254 29 0F		                AND     #$0F            ; mask out floppy type bits
+    45 0256 8D 0E 18		                STA     FLOPPY_TYPE     ; save lower nibble as FLOPPY_TYPE
+    46 0259 8A			                TXA                     ; reload DIP switch settings from X to A
+    47 025A 4A 4A 4A 4A		        :4      LSR                     ; and shift keymap bits to lower nibble
+    48 025E AA			                TAX
+    49 025F BD 76 02		                LDA     KBD_MAP_ID,X    ; ...decode DIP switch settings to Map ID
+    50 0262 8D 0D 18		                STA     KBD_LANG        ; and store result to KBD_LANG
+    51 				                
+    52 				; **** PS2 Keyboard Initialization *********************************************
+    53 				                
+    54 0265 C9 06		                CMP     #PS2NO_KBD      ; any PS2 keyboard type selected?
+    55 0267 F0 05		                BEQ     FGC_INIT_END    ; no, just exit.
+    56 0269 A5 C9		                LDA     DEVID           ; yes, load VDP Device ID
+    57 026B 8D 74 1A				STA	STDINDEV	; and make it the standard input device
+    58 026E 60			FGC_INIT_END    RTS
+    59
+    60 				; **** Wait For Some Microseconds **********************************************
+    61
+    62 026F A4 06		FGC_WAIT        LDY     $06
+    63 0271 EA			FGC_WAIT2       NOP
+    64 0272 88			                DEY
+    65 0273 D0 FC		                BNE     FGC_WAIT2
+    66 0275 60			                RTS
+    67 				                
+    68 				; **** DIP-Switch to Language Conversion Table **********************************
+    69
+    70 0276 06 03 05 01 06 02 + KBD_MAP_ID      .byte	$06, $03, $05, $01, $06, $02, $04, $00
+    71 				                
+    72 				; **** Print Controller Info ***************************************************
+    73 						.endl
+    74 3C7E					ORG	B15_1.FGC_PRINT_INFO - PROG_START + B15_ADDR	; address in eeprom
+    75 0300			B15_1		.local,	$0300		; JC2 address $1100 in ROM, $0300 in RAM
+    76
+    77 0300 A2 48		FGC_PRINT_INFO  LDX     #< FGC_INFO_STR1
+    78 0302 A0 03		                LDY     #> FGC_INFO_STR1
+    79 0304 20 26 03		                JSR     FGC_STROUT
+    80 0307 20 3A 03		                JSR     FGC_ADDROUT
+    81 030A AD 0D 18		FGC_PRINT_INFO2 LDA     KBD_LANG
+    82 030D C9 06		                CMP     #PS2NO_KBD      ; any PS2 keyboard type selected?
+    83 030F F0 36		                BEQ     FGC_INFO_END    ; no, just exit
+    84 0311 0A			                ASL     
+    85 0312 A8			                TAY
+    86 0313 20 5E E0		                JSR     SPCOUT
+    87 0316 B9 73 03		                LDA     KBD_LANG_NAME,Y
+    88 0319 20 52 E0		                JSR     COUT
+    89 031C B9 74 03		                LDA     KBD_LANG_NAME+1,Y
+    90 031F 20 52 E0		                JSR     COUT
+    91 0322 A2 7F		                LDX     #< KBD_INFO_STR
+    92 0324 A0 03		                LDY     #> KBD_INFO_STR
+    93 0326 A5 EA		FGC_STROUT      LDA     PSTRL
+    94 0328 48			                PHA
+    95 0329 A5 EB		                LDA     PSTRH
+    96 032B 48			                PHA
+    97 032C 86 EA		                STX     PSTRL
+    98 032E 84 EB		                STY     PSTRH
+    99 0330 20 83 E0		                JSR     STROUT
+   100 0333 68			                PLA
+   101 0334 85 EB		                STA     PSTRH
+   102 0336 68			                PLA
+   103 0337 85 EA		                STA     PSTRL
+   104 0339 60			                RTS
+   105 033A A5 17		FGC_ADDROUT     LDA	FGCBASEH
+   106 033C 20 91 E0				JSR	HEXOUT
+   107 033F A9 00				LDA	#$00
+   108 0341 20 91 E0				JSR	HEXOUT
+   109 0344 20 5A E0				JSR     CROUT
+   110 0347 60			FGC_INFO_END    RTS
+   111
+   112 				; **** Strings *****************************************************************
+   113
+   114 0348 20 46 47 43 20 42 + FGC_INFO_STR1   .by    ' FGC BIOS V'
+   115 0353 30 2E 32 2E 32	                .byte  VERMAIN,$2E,VERPSUB,$2E,VERSSUB
+   116 0358 20 62 79 20 45 6D + 	        .by    ' by Emile' CR $00
+   117 0363 20 56 39 39 33 38 +    		.by    ' V9938 VPU at $' $00
+   118 				                
+   119 0373 55 53 44 45 46 52 + KBD_LANG_NAME   .by    'US' 'DE' 'FR' 'ES' 'IT' 'UK'
+   120
+   121 037F 20 74 79 70 65 20 + KBD_INFO_STR    .by	' type PS/2 Keyboard enabled' CR $00
+   122 				                
+   123 				; **** Main Initialization Routine *********************************************
+   124
+   125 						.endl
+   126 3D9C					ORG	B15_2.MAIN_START - PROG_START + B15_ADDR	; address in eeprom
+   127 05D0			B15_2		.local,	$05D0		; JC2 address $13D0
+   128 				                
+   129 				; ******************************************************************************
+   130
+   131 05D0 86 17		MAIN_START      STX     FGCBASEH        ; set FGC base address high byte
+   132 05D2 86 FC		                STX     TEMP            ; and save a copy to TEMP
+   133 05D4 A9 00		                LDA     #< B15.FGC_REGS
+   134 05D6 85 EA		                STA     PSTRL
+   135 05D8 A9 02		                LDA     #> B15.FGC_REGS	; set destination address
+   136 05DA 85 EB		                STA     PSTRH
+   137 05DC A2 04		                LDX     #$04            ; four pages to copy
+   138 05DE A0 10		                LDY     #$10            ; start at offset $10
+   139 05E0 B1 16		LOOP1           LDA     (FGCBASE),Y     ; load ROM content
+   140 05E2 91 EA		                STA     (PSTR),Y        ; and copy it to destination address
+   141 05E4 C8			                INY                     ; next byte
+   142 05E5 D0 F9		                BNE     LOOP1           ; all bytes in page copied? No copy more
+   143 05E7 E6 17		                INC     FGCBASEH        ; yes, increment ROM base address by $100
+   144 05E9 E6 EB		                INC     PSTRH           ; and also increment destination address by $100
+   145 05EB CA			                DEX                     ; next page
+   146 05EC D0 F2		                BNE     LOOP1           ; all pages copied? No copy more
+   147 05EE A5 FC		                LDA     TEMP            ; yes, restore original FGC base address high byte
+   148 05F0 85 17		                STA     FGCBASEH
+   149 05F2 4C 10 02		                JMP     B15.FGC_INIT    ; jump to FGC initialization routine in RAM
+   150
+   151 				; **** Main Initialization Entry Point *****************************************
+   152
+   153 						.endl
+   154 3FF5					ORG	B15_3.START - PROG_START + B15_ADDR	; address in eeprom
+   155 05FB			B15_3		.local,	$05FB			; JC2 address $13FB
+   156 				                
+   157 05FB 18			START           CLC                     	; short jump code to MAIN_START and
+   158 05FC 90 00		                BCC     NEXT            	; also MAGIC NUMBER $18 $90 $00 $90
+   159 05FE 90 D0		NEXT            BCC     B15_2.MAIN_START	; to detect card
+   160 				                
+   161 						.endl
+   162 						
+    69 						
+    70 4000					ORG	$7FFF
+    71 7FFF FF					.byte	$FF			; Make .bin file 32K
+    72 						END

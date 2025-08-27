@@ -1,5 +1,5 @@
 ; ------------------------------------------------------------------------------
-; Junior Computer ][ BIOS Version 1.2.4 by Emile, v1.1.4 and earlier versions by Joerg Walke
+; Junior Computer ][ BIOS Version 1.2.5 by Emile, v1.1.4 and earlier versions by Joerg Walke
 ;
 ; 21-04-25: v1.2.0 Emile, Integration into 1 eprom
 ; 08-05-25: v1.2.1 -Basic update (v2.22 patches + I2COUT, I2CIN and DOS commands)
@@ -11,15 +11,19 @@
 ; 20-07-25: v1.2.4 - TAPE routines removed and DETECT_IOL updated
 ;                  - Basic: SOUND added and PORTIO/PORTOUT/PORTIN updated with new IO2 and main-board
 ;                  - MCP23017 routines added
+; 12-08-25: v1.2.5 - *.inc file in separate inc dir. so they can also be used in other projects.
+;                  - Bug-fix CFWAIT, CF_RD_BLK and CF_WR_BLK routines
 ; ------------------------------------------------------------------------------
 VERMAIN   	EQU     '1'    			; BIOS main version
 VERPSUB    	EQU     '2'    			; BIOS primary sub version
-VERSSUB		EQU	'4'			; BIOS secondary sub version
+VERSSUB		EQU	'5'			; BIOS secondary sub version
 
         	OPT h-                          ; no DOS file-header
         	OPT f+                          ; save as single block
 
         	icl 	"jc2_defines.inc"  	; all address defines for the JC-II
+		icl	"jc2_constants.inc"	; all JC-II related constants 
+		icl	"jc2_macros.inc"	; JC-2 macro's for the MADS-assembler
 
 		ORG	$8000
 		.byte	$FF			; Fill entire eprom

@@ -31,7 +31,7 @@
 	STY	:b16+1
 .endm
 
-.macro	PRSTR	str				; Print String
+.macro	PRSTRM	str				; Print String
 	LDXYI	:str
 	JSR	OS_STRING_OUT
 .endm
@@ -341,4 +341,13 @@ AND.NE	.macro 	' '	p1 p2 p3		; LDA + AND + BNE
 		AND	:p1
 		BNE	:p2
 	eif
+.endm
+
+.macro		ADCAW			; Add A to word and store in word
+		CLC
+		ADC	:1
+		STA	:1
+		LDA	:1+1
+		ADC	#0
+		STA	:1+1
 .endm

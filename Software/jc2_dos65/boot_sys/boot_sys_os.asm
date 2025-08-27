@@ -20,7 +20,7 @@ SHR_32          LSR32	NUM32			; SHR with C=0
 ; ******************************************************************************
 ; *                               OS Entry Point                               *
 ; ******************************************************************************
-OS_MAIN         PRSTR	MSG_BOOT			; Print boot-message
+OS_MAIN         PRSTRM	MSG_BOOT			; Print boot-message
                 JSR     OS_SET_ROOT_DIR	     		; set D_ACTUAL_DIR and CURR_DIR_BLK to root-dir
                 
 ; Init CFC LOAD and SAVE VECTORS ***********************************************
@@ -450,9 +450,9 @@ FSAVE_PTR	.word	$0000				; File-save Pointer
 ; Links a new cluster (FREE_CLUSTER) to the current cluster (PREV_CLUSTER) of a file.
 ; It also updates (writes) the FAT table.
 ; ******************************************************************************
-LINK_FAT_ENTRY	PRSTR	TXT_LINK
+LINK_FAT_ENTRY	PRSTRM	TXT_LINK
 		PRHEX16	PREV_CLUSTER
-		PRSTR	TXT_LINK2
+		PRSTRM	TXT_LINK2
 		PRHEX16	FREE_CLUSTER
 		JSR	CROUT				; Print CR
 		LDA	PREV_CLUSTER			; get LSB of PREV_CLUSTER
@@ -627,7 +627,7 @@ ANDIR_LP1	STA.NE	(BLKBUF),Y+ ANDIR_LP1	; Clear dir block buffer (512 bytes) and 
 		; and write it to disk
 		LDA	DBG_PRINT		; 1 = Debug print info
 		BEQ	AND_NO_DBG
-		PRSTR	TXT_CURR_CLST3		; Print 'ADD_NEW_DIR, FREE=$'
+		PRSTRM	TXT_CURR_CLST3		; Print 'ADD_NEW_DIR, FREE=$'
 		PRHEX32	FREE_CLUSTER		; print FREE_CLUSTER in hex
 		JSR	CROUT			; Print CR
 
@@ -666,11 +666,11 @@ ADD_FILE        JSR     OS_FILE_EXISTS      		; check if file already exists
 		BCC	OS_CREATE_CONT			; branch if file does not exist
 		
 		; delete file (SH_DEL)	
-		PRSTR	TXT_OVERWRITE			; Print 'File exists, overwrite (y/n)?'
+		PRSTRM	TXT_OVERWRITE			; Print 'File exists, overwrite (y/n)?'
 		JSR 	CIN           			; get character
 		AND 	#$DF            		; uppercase chars only
 		CMP.NE 	#'Y' OS_CREATE_ERR    		; if not Y then exit with error
-		PRSTR	TXT_SH_DEL			; DEBUG
+		PRSTRM	TXT_SH_DEL			; DEBUG
 		JSR	SH_DEL_FILE			; Delete file and update FAT table
 
 OS_CREATE_CONT	JSR	OS_ADD_CLUSTER			; Return free cluster in FREE_CLUSTER (does NOT write FAT back to disk)
@@ -685,7 +685,7 @@ OS_CREATE_CONT	JSR	OS_ADD_CLUSTER			; Return free cluster in FREE_CLUSTER (does 
 		
 		;LDA	DBG_PRINT			; 1 = Debug print info
 		;BEQ	OSCR_NO_DBG			; 0 = no debug
-		PRSTR	TXT_FFREE1			; DEBUG
+		PRSTRM	TXT_FFREE1			; DEBUG
 		PRHEX16	CURR_DIR_ENTRY
 		JSR	CROUT				; Print CR
 OSCR_NO_DBG	LDA     F_ATTRIBS			; Get file/dir attributes

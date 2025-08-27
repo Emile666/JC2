@@ -1,0 +1,64 @@
+Basic V2.29 is part of BIOS Eprom V1.2.4 and contains the following updates:
+
+RETIRQ, RETNMI, IRQ and NMI are removed.
+
+PORTIO <dev, iomask> call has remained the same, but now new IO-chips on the V4.1 main-board
+                     and the IO2 board are supported.
+<dev> is now a number between 0 and 9:
+      0: PORTA of VIA U5 on IO-board (and IO2-board)
+      1: PORTB of VIA U5 on IO-board (and IO2-board)
+      2: PORTA of VIA U15 on JC2 V4.1 main-board
+      3: PORTB of VIA U15 on JC2 V4.1 main-board
+      4: GPIOA of MCP23017 with I2C-address $40 on IO2-board
+      5: GPIOB of MCP23017 with I2C-address $40 on IO2-board
+      6: GPIOA of MCP23017 with I2C-address $42 on IO2-board
+      7: GPIOB of MCP23017 with I2C-address $42 on IO2-board
+      8: GPIOA of MCP23017 with I2C-address $44 on IO2-board
+      9: GPIOB of MCP23017 with I2C-address $44 on IO2-board
+      10 and higher: error-message. No support for I2C devices anymore, use the PORT commands for this.
+
+<iomask> is unchanged: a 1 defines a port-pin as output, a 0 as input.
+      This is default behaviour for a VIA. For a MCP23017 this is exactly opposite, but this is taken care
+      of by the software. So a 1 = output, 0 = input is valid for all IO!
+Example: PORTIO 4,255 sets all bits of GPIOA of MCP23017 $40 as output.
+         PORTIO 3,15  sets bits 7-4 as input and bits 3-0 as output of VIA U15 on the main-board.
+
+PORT <dev, data>
+      Has remained the same, but <dev> is now a number between 0 and 9, which is identical to the PORTIO command.
+      This command sends databyte <data> to the IO-port. The port has to be set as output first with the PORTIO command.
+Example: PORT 3, 192 sets bits 7 and 6 of VIA U15 to 1 and the other bits to 0.
+
+PORT(dev)
+      Has remained the same, but <dev> is now a number between 0 and 9, which is identical to the PORTIO command.
+      This command reads databyte <data> from the IO-port.
+Example: test = PORT(8) reads a byte from MCP23017 $44 GPIOA port.
+
+SOUND ch, freq, att
+      ch  : channel number: a number between 0 to 3, channel 3 is a noise channel.
+      freq: divider for frequency generator, the frequency itself = 125000 / freq.
+            freq is a 10-bits number between 0 and 1023.
+            Example: a value of 125 results in a frequency of 1 kHz.
+	    If ch = 3, then freq has another meaning:
+            freq = 0..3: Periodic Noise
+               0: Shift Rate is N/512 for noise generator frequency control
+               1: Shift Rate is N/1024
+               2: Shift Rate is N/2048
+               3: Tone-generator 2 output is used for feedback control
+	    freq = 4..7: White Noise
+               4: Shift Rate is N/512 for noise generator frequency control
+               5: Shift Rate is N/1024
+               6: Shift Rate is N/2048
+               7: Tone-generator 2 output is used for feedback control
+      attn: attenuation for frequency generator, attenuation step-size is 2 dB:
+            0: 0 dB attenuation (highest volume)
+	    1: 2 dB attenuation
+            2: 4 dB attenuation
+            4: 8 dB attenuation
+            8: 16 dB attenuation
+           14: 28 dB attenuation
+           15: OFF 
+Example: sound 2, 284, 1 creates a 440 Hz signal with 2 dB attenuation at channel 2.
+         sound 3, 5, 3   creates white noise with a shift-rate of N/1024 and attenuation of 6 dB
+
+
+

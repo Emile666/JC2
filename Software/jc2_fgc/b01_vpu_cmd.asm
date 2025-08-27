@@ -12,28 +12,28 @@ FGC_REGISTERS	.byte	$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF  ; 16 bytes reserved space
  	        
 FGC_INFO        JMP     $0300
 
-FGC_SET_PAGE    STA     PIA_PORTC       ; switch ROM page and call code
+FGC_SET_PAGE    STA     PPI_PORTC       ; switch ROM page and call code
                 RTS
                 
 FGC_FDC_CMD     PHA                     ; save Accumulator
                 LDA     #$02
-                STA     PIA_PORTC       ; switch to ROM page 2. Code continues in page 2
+                STA     PPI_PORTC       ; switch to ROM page 2. Code continues in page 2
                 NOP                     ; place holder nops
                 NOP
                 
 FGC_VPU_CMD     PHA                     ; save Accumulator
                 LDA     #$01
-                STA     PIA_PORTC       ; switch to ROM page 1
+                STA     PPI_PORTC       ; switch to ROM page 1
                 BNE     VPU_CMD         ; branch to VPU command routine
 
 FGC_VPU_OUT     PHA                     ; save Accumulator
                 LDA     #$00
-                STA     PIA_PORTC       ; switch to ROM page 0. Code continues in page 0
+                STA     PPI_PORTC       ; switch to ROM page 0. Code continues in page 0
                 NOP                     ; place holder nops
                 NOP
                 
 _BLINK_HANDLER_ LDA     #$00
-                STA     PIA_PORTC       ; switch to ROM page 0. Code continues on page 0
+                STA     PPI_PORTC       ; switch to ROM page 0. Code continues on page 0
 
 ; **** DRIVER START ************************************************************
 ;
@@ -137,17 +137,17 @@ VPU_STD_COLOR   LDX     #< B01_0.COLOR_PALETTE
 ;
 ; ******************************************************************************
                 
-VPU_LD_COLPAL   STX     ADRL
-                STY     ADRH
+VPU_LD_COLPAL   STX     FGC_ADRL
+                STY     FGC_ADRH
                 LDY     #$00
 VPU_LD_COLPAL1  TYA
                 LSR     
                 LDX     #VPU_REG16
                 JSR     VPU_SET_REG
-                LDA     (ADR),Y
+                LDA     (FGC_ADR),Y
                 STA     VPU_PORT2
                 INY
-                LDA     (ADR),Y
+                LDA     (FGC_ADR),Y
                 STA     VPU_PORT2
                 INY
                 CPY     #$20
@@ -482,7 +482,7 @@ VPU_FRAME_RECT  STA     VARSAV
                 LDA     VARSAV
                 JSR     VPU_VLINE
                 LDA     POS_X
-                STA     XREG
+                STA     FGC_XREG
                 TXA
                 CLC
                 ADC     POS_X
@@ -496,7 +496,7 @@ FRAME_RECT1     TYA
                 BCC     FRAME_RECT2
                 RTS
 FRAME_RECT2     STA     POS_Y
-                LDA     XREG
+                LDA     FGC_XREG
                 STA     POS_X
                 LDA     VARSAV
 
@@ -552,8 +552,8 @@ VPU_LINE_CMD    PLA
 ; ******************************************************************************
 
 VPU_LINE        PHA
-                STX     XREG
-                STY     YREG
+                STX     FGC_XREG
+                STY     FGC_YREG
                 CPX     POS_X
                 BCC     VPU_NEG_X
                 TXA
@@ -563,7 +563,7 @@ VPU_LINE        PHA
                 BEQ     VPU_LINE1
 VPU_NEG_X       LDA     POS_X
                 SEC
-                SBC     XREG
+                SBC     FGC_XREG
                 TAX
                 LDA     #$04
 VPU_LINE1       STA     VARSAV
@@ -576,7 +576,7 @@ VPU_LINE1       STA     VARSAV
                 BEQ     VPU_LINE2
 VPU_NEG_Y       LDA     POS_Y
                 SEC
-                SBC     YREG
+                SBC     FGC_YREG
                 TAY
                 LDA     #$08
 VPU_LINE2       ORA     VARSAV
@@ -607,8 +607,8 @@ VPU_LINE3       PLA
                 PLA
                 ORA     #$70
                 STA     VPU_PORT3       ; R46 - set command
-                LDX     XREG
-                LDY     YREG
+                LDX     FGC_XREG
+                LDY     FGC_YREG
                 STX     POS_X
                 STY     POS_Y
                 RTS
@@ -684,16 +684,16 @@ CLS_LOOP        STA     VPU_PORT0
 ;
 ; ******************************************************************************
 
-VPU_HOME        STX     XREG            ; save X register
-                STY     YREG            ; save Y register
+VPU_HOME        STX     FGC_XREG            ; save X register
+                STY     FGC_YREG            ; save Y register
 VPU_HOME2       LDA     #$00
                 TAX
                 STX     POS_X
                 TAY
                 STY     POS_Y
                 JSR     VPU_SET_WR_ADR
-                LDX     XREG            ; restore x register
-                LDY     YREG            ; restore y register
+                LDX     FGC_XREG            ; restore x register
+                LDY     FGC_YREG            ; restore y register
                 RTS
                 
 VPU_CURSOR_ON_OFF
@@ -738,7 +738,7 @@ VPU_HIDE_END    SEC                     ; set carry for easy branches
 B01_0		.local,	$13CB
 
 VPU_CLRLINE     LDA     #$00
-                STA     PIA_PORTC  	; switch to ROM page 0. Code continues in page 0
+                STA     PPI_PORTC  	; switch to ROM page 0. Code continues in page 0
                 NOP                	; place holder nops
                 NOP
                 NOP
@@ -752,7 +752,7 @@ VPU_CLRLINE     LDA     #$00
 ; ******************************************************************************
 
 VPU_SETCURSOR   LDA     #$00
-                STA     PIA_PORTC  ; switch to ROM page 0. Code continues in page 2
+                STA     PPI_PORTC  ; switch to ROM page 0. Code continues in page 2
                 
 ; **** Color Palettes **********************************************************
 

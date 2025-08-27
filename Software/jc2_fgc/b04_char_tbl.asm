@@ -14,7 +14,7 @@ B04		.local, FGC_BASE
                 NOP
                 NOP
                 
-FGC_SET_PAGE_5  STA     PIA_PORTC       ; switch ROM page
+FGC_SET_PAGE_5  STA     PPI_PORTC       ; switch ROM page
                 LDY     #$00
                 STY     ADR_CHAR
                 LDA     #> B04_1.PAGE_START
@@ -120,7 +120,7 @@ START         	.byte	      $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF  ; 16 bytes reserved 
                 NOP
                 NOP
 
-FGC_SET_PAGE_6  STA     PIA_PORTC       ; switch ROM page
+FGC_SET_PAGE_6  STA     PPI_PORTC       ; switch ROM page
                 LDY     #$00
                 STY     ADR_CHAR
                 LDA     #> B04_1.PAGE_START
@@ -221,7 +221,7 @@ START         	.byte	      $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF  ; 16 bytes reserved 
                 NOP
                 NOP
 
-FGC_SET_PAGE_7  STA     PIA_PORTC       ; switch ROM page
+FGC_SET_PAGE_7  STA     PPI_PORTC       ; switch ROM page
                 LDY     #$00
                 STY     ADR_CHAR
                 LDA     #> B04_1.PAGE_START
@@ -244,70 +244,70 @@ FONT_LOOP22     LDA     (ADR_CHAR),Y
 		ORG	B04_5.START - FGC_BASE + B04_ADDR	; address in eeprom
 B04_5		.local,	$1A00 	; 2560 bytes offset from page start
                 
-START           .byte	 $30, $48, $E0, $40, $E0, $48, $30, $00      ; code for char €
+START           .byte	 $30, $48, $E0, $40, $E0, $48, $30, $00      ; code for char  
                 .byte	 $A8, $50, $A8, $50, $A8, $50, $A8, $00      ; code for char CURSOR2
-                .byte	 $00, $00, $00, $00, $60, $20, $40, $00      ; code for char ‚
-                .byte	 $18, $20, $20, $70, $20, $20, $C0, $00      ; code for char ƒ
-                .byte	 $00, $00, $00, $00, $50, $50, $A0, $00      ; code for char „
-                .byte	 $00, $00, $00, $00, $00, $A8, $00, $00      ; code for char …
-                .byte	 $20, $20, $70, $20, $20, $20, $20, $00      ; code for char †
-                .byte	 $20, $20, $70, $20, $70, $20, $20, $00      ; code for char ‡
-                .byte	 $20, $50, $00, $00, $00, $00, $00, $00      ; code for char ˆ
-                .byte	 $00, $48, $10, $20, $40, $A8, $00, $00      ; code for char ‰
-                .byte	 $50, $20, $78, $80, $70, $08, $F0, $00      ; code for char Š
-                .byte	 $00, $10, $20, $40, $20, $10, $00, $00      ; code for char ‹
-                .byte	 $78, $A0, $A0, $B8, $A0, $A0, $78, $00      ; code for char Œ
-                .byte	 $00, $00, $F8, $08, $E8, $28, $28, $28      ; code for char 
-                .byte	 $50, $20, $F8, $10, $20, $40, $F8, $00      ; code for char Ž
-                .byte	 $00, $00, $3C, $20, $2C, $28, $28, $28      ; code for char 
-                .byte	 $28, $28, $2C, $20, $3C, $00, $00, $00      ; code for char 
-                .byte	 $10, $20, $30, $00, $00, $00, $00, $00      ; code for char ‘
-                .byte	 $00, $00, $00, $00, $60, $20, $40, $00      ; code for char ’
-                .byte	 $28, $50, $50, $00, $00, $00, $00, $00      ; code for char “
-                .byte	 $00, $00, $00, $00, $50, $50, $A0, $00      ; code for char ”
-                .byte	 $00, $00, $30, $78, $78, $30, $00, $00      ; code for char •
-                .byte	 $00, $00, $00, $00, $70, $00, $00, $00      ; code for char –
-                .byte	 $00, $00, $00, $00, $FC, $00, $00, $00      ; code for char —
-                .byte	 $50, $A0, $00, $00, $00, $00, $00, $00      ; code for char ˜
-                .byte	 $00, $00, $FC, $5C, $54, $00, $00, $00      ; code for char ™
-                .byte	 $50, $20, $78, $80, $70, $08, $F0, $00      ; code for char š
-                .byte	 $00, $40, $20, $10, $20, $40, $00, $00      ; code for char ›
-                .byte	 $00, $00, $50, $A8, $B8, $A0, $58, $00      ; code for char œ
-                .byte	 $28, $28, $E8, $08, $F8, $00, $00, $00      ; code for char 
-                .byte	 $50, $20, $F8, $10, $20, $40, $F8, $00      ; code for char ž
-                .byte	 $88, $00, $88, $50, $20, $20, $20, $00      ; code for char Ÿ
-                .byte	 $28, $28, $E8, $08, $E8, $28, $28, $28      ; code for char  
-                .byte	 $20, $00, $20, $20, $20, $20, $20, $00      ; code for char ¡
-                .byte	 $00, $10, $38, $40, $40, $40, $38, $10      ; code for char ¢
-                .byte	 $30, $48, $40, $E0, $40, $60, $98, $00      ; code for char £
-                .byte	 $00, $48, $30, $48, $48, $30, $48, $00      ; code for char ¤
-                .byte	 $88, $50, $20, $70, $20, $70, $20, $00      ; code for char ¥
-                .byte	 $20, $20, $20, $00, $20, $20, $20, $00      ; code for char ¦
-                .byte	 $78, $80, $70, $88, $70, $08, $F0, $00      ; code for char §
-                .byte	 $00, $50, $00, $00, $00, $00, $00, $00      ; code for char ¨
-                .byte	 $78, $84, $B4, $C4, $C4, $B4, $84, $78      ; code for char ©
-                .byte	 $38, $08, $38, $38, $00, $00, $00, $00      ; code for char ª
-                .byte	 $00, $28, $50, $A0, $50, $28, $00, $00      ; code for char «
-                .byte	 $00, $00, $00, $F0, $10, $00, $00, $00      ; code for char ¬
-                .byte	 $00, $00, $00, $00, $60, $00, $00, $00      ; code for char ­
-                .byte	 $78, $84, $E4, $D4, $E4, $D4, $84, $78      ; code for char ®
-                .byte	 $00, $F8, $00, $00, $00, $00, $00, $00      ; code for char ¯
-                .byte	 $30, $48, $48, $30, $00, $00, $00, $00      ; code for char °
-                .byte	 $00, $20, $70, $20, $00, $70, $00, $00      ; code for char ±
-                .byte	 $60, $10, $20, $40, $70, $00, $00, $00      ; code for char ²
-                .byte	 $70, $10, $20, $10, $60, $00, $00, $00      ; code for char ³
-                .byte	 $10, $20, $00, $00, $00, $00, $00, $00      ; code for char ´
-                .byte	 $00, $00, $00, $90, $90, $90, $E8, $80      ; code for char µ
-                .byte	 $00, $78, $D0, $D0, $50, $50, $50, $00      ; code for char ¶
-                .byte	 $00, $00, $00, $20, $00, $00, $00, $00      ; code for char ·
-                .byte	 $00, $00, $00, $00, $00, $60, $10, $70      ; code for char ¸
-                .byte	 $20, $60, $20, $20, $20, $00, $00, $00      ; code for char ¹
-                .byte	 $30, $48, $30, $00, $78, $00, $00, $00      ; code for char º
-                .byte	 $00, $50, $28, $14, $28, $50, $00, $00      ; code for char »
-                .byte	 $00, $00, $FC, $00, $FC, $00, $00, $00      ; code for char ¼
-                .byte	 $28, $28, $28, $28, $28, $28, $28, $28      ; code for char ½
-                .byte	 $28, $28, $2C, $20, $2C, $28, $28, $28      ; code for char ¾
-                .byte	 $20, $00, $20, $40, $80, $88, $70, $00      ; code for char ¿
+                .byte	 $00, $00, $00, $00, $60, $20, $40, $00      ; code for char  
+                .byte	 $18, $20, $20, $70, $20, $20, $C0, $00      ; code for char  
+                .byte	 $00, $00, $00, $00, $50, $50, $A0, $00      ; code for char  
+                .byte	 $00, $00, $00, $00, $00, $A8, $00, $00      ; code for char  
+                .byte	 $20, $20, $70, $20, $20, $20, $20, $00      ; code for char  
+                .byte	 $20, $20, $70, $20, $70, $20, $20, $00      ; code for char  
+                .byte	 $20, $50, $00, $00, $00, $00, $00, $00      ; code for char  
+                .byte	 $00, $48, $10, $20, $40, $A8, $00, $00      ; code for char  
+                .byte	 $50, $20, $78, $80, $70, $08, $F0, $00      ; code for char  
+                .byte	 $00, $10, $20, $40, $20, $10, $00, $00      ; code for char  
+                .byte	 $78, $A0, $A0, $B8, $A0, $A0, $78, $00      ; code for char  
+                .byte	 $00, $00, $F8, $08, $E8, $28, $28, $28      ; code for char  
+                .byte	 $50, $20, $F8, $10, $20, $40, $F8, $00      ; code for char  
+                .byte	 $00, $00, $3C, $20, $2C, $28, $28, $28      ; code for char  
+                .byte	 $28, $28, $2C, $20, $3C, $00, $00, $00      ; code for char  
+                .byte	 $10, $20, $30, $00, $00, $00, $00, $00      ; code for char  
+                .byte	 $00, $00, $00, $00, $60, $20, $40, $00      ; code for char  
+                .byte	 $28, $50, $50, $00, $00, $00, $00, $00      ; code for char  
+                .byte	 $00, $00, $00, $00, $50, $50, $A0, $00      ; code for char  
+                .byte	 $00, $00, $30, $78, $78, $30, $00, $00      ; code for char  
+                .byte	 $00, $00, $00, $00, $70, $00, $00, $00      ; code for char  
+                .byte	 $00, $00, $00, $00, $FC, $00, $00, $00      ; code for char  
+                .byte	 $50, $A0, $00, $00, $00, $00, $00, $00      ; code for char  
+                .byte	 $00, $00, $FC, $5C, $54, $00, $00, $00      ; code for char  
+                .byte	 $50, $20, $78, $80, $70, $08, $F0, $00      ; code for char  
+                .byte	 $00, $40, $20, $10, $20, $40, $00, $00      ; code for char  
+                .byte	 $00, $00, $50, $A8, $B8, $A0, $58, $00      ; code for char  
+                .byte	 $28, $28, $E8, $08, $F8, $00, $00, $00      ; code for char  
+                .byte	 $50, $20, $F8, $10, $20, $40, $F8, $00      ; code for char  
+                .byte	 $88, $00, $88, $50, $20, $20, $20, $00      ; code for char  
+                .byte	 $28, $28, $E8, $08, $E8, $28, $28, $28      ; code for char  
+                .byte	 $20, $00, $20, $20, $20, $20, $20, $00      ; code for char  
+                .byte	 $00, $10, $38, $40, $40, $40, $38, $10      ; code for char  
+                .byte	 $30, $48, $40, $E0, $40, $60, $98, $00      ; code for char  
+                .byte	 $00, $48, $30, $48, $48, $30, $48, $00      ; code for char  
+                .byte	 $88, $50, $20, $70, $20, $70, $20, $00      ; code for char  
+                .byte	 $20, $20, $20, $00, $20, $20, $20, $00      ; code for char  
+                .byte	 $78, $80, $70, $88, $70, $08, $F0, $00      ; code for char  
+                .byte	 $00, $50, $00, $00, $00, $00, $00, $00      ; code for char  
+                .byte	 $78, $84, $B4, $C4, $C4, $B4, $84, $78      ; code for char  
+                .byte	 $38, $08, $38, $38, $00, $00, $00, $00      ; code for char  
+                .byte	 $00, $28, $50, $A0, $50, $28, $00, $00      ; code for char  
+                .byte	 $00, $00, $00, $F0, $10, $00, $00, $00      ; code for char  
+                .byte	 $00, $00, $00, $00, $60, $00, $00, $00      ; code for char  
+                .byte	 $78, $84, $E4, $D4, $E4, $D4, $84, $78      ; code for char  
+                .byte	 $00, $F8, $00, $00, $00, $00, $00, $00      ; code for char  
+                .byte	 $30, $48, $48, $30, $00, $00, $00, $00      ; code for char  
+                .byte	 $00, $20, $70, $20, $00, $70, $00, $00      ; code for char  
+                .byte	 $60, $10, $20, $40, $70, $00, $00, $00      ; code for char  
+                .byte	 $70, $10, $20, $10, $60, $00, $00, $00      ; code for char  
+                .byte	 $10, $20, $00, $00, $00, $00, $00, $00      ; code for char  
+                .byte	 $00, $00, $00, $90, $90, $90, $E8, $80      ; code for char  
+                .byte	 $00, $78, $D0, $D0, $50, $50, $50, $00      ; code for char  
+                .byte	 $00, $00, $00, $20, $00, $00, $00, $00      ; code for char  
+                .byte	 $00, $00, $00, $00, $00, $60, $10, $70      ; code for char  
+                .byte	 $20, $60, $20, $20, $20, $00, $00, $00      ; code for char  
+                .byte	 $30, $48, $30, $00, $78, $00, $00, $00      ; code for char  
+                .byte	 $00, $50, $28, $14, $28, $50, $00, $00      ; code for char  
+                .byte	 $00, $00, $FC, $00, $FC, $00, $00, $00      ; code for char  
+                .byte	 $28, $28, $28, $28, $28, $28, $28, $28      ; code for char  
+                .byte	 $28, $28, $2C, $20, $2C, $28, $28, $28      ; code for char  
+                .byte	 $20, $00, $20, $40, $80, $88, $70, $00      ; code for char  
                 
 ; ROM PAGE 7 ($1C00 - $1FFF and $5C00 - $5FFF) *********************************
 
@@ -322,7 +322,7 @@ START         	.byte	      $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF  ; 16 bytes reserved 
                 NOP
                 NOP
 
-FGC_SET_PAGE_1  STA     PIA_PORTC       ; switch ROM page
+FGC_SET_PAGE_1  STA     PPI_PORTC       ; switch ROM page
                 LDY     #$00
                 STY     ADR_CHAR
                 LDA     #> B04_1.PAGE_START
@@ -345,70 +345,70 @@ FONT_LOOP32     LDA     (ADR_CHAR),Y
 		ORG	B04_7.START - FGC_BASE + B04_ADDR	; address in eeprom
 B04_7		.local,	$1E00 					; $E00 bytes offset from page start
                 
-START           .byte	 $40, $20, $70, $88, $F8, $88, $88, $00      ; code for char À
-                .byte	 $10, $20, $70, $88, $F8, $88, $88, $00      ; code for char Á
-                .byte	 $20, $50, $70, $88, $F8, $88, $88, $00      ; code for char Â
-                .byte	 $50, $A0, $70, $88, $F8, $88, $88, $00      ; code for char Ã
-                .byte	 $88, $00, $70, $88, $F8, $88, $88, $00      ; code for char Ä
-                .byte	 $70, $50, $70, $88, $F8, $88, $88, $00      ; code for char Å
-                .byte	 $78, $A0, $A0, $F8, $A0, $A0, $B8, $00      ; code for char Æ
-                .byte	 $70, $88, $80, $80, $88, $70, $20, $30      ; code for char Ç
-                .byte	 $40, $20, $F8, $80, $F0, $80, $F8, $00      ; code for char È
-                .byte	 $10, $20, $F8, $80, $F0, $80, $F8, $00      ; code for char É
-                .byte	 $20, $50, $F8, $80, $F0, $80, $F8, $00      ; code for char Ê
-                .byte	 $88, $00, $F8, $80, $F0, $80, $F8, $00      ; code for char Ë
-                .byte	 $40, $20, $70, $20, $20, $20, $70, $00      ; code for char Ì
-                .byte	 $10, $20, $70, $20, $20, $20, $70, $00      ; code for char Í
-                .byte	 $20, $50, $70, $20, $20, $20, $70, $00      ; code for char Î
-                .byte	 $50, $00, $70, $20, $20, $20, $70, $00      ; code for char Ï
-                .byte	 $70, $48, $48, $E8, $48, $48, $70, $00      ; code for char Ð
-                .byte	 $28, $50, $88, $C8, $A8, $98, $88, $00      ; code for char Ñ
-                .byte	 $40, $20, $70, $88, $88, $88, $70, $00      ; code for char Ò
-                .byte	 $10, $20, $70, $88, $88, $88, $70, $00      ; code for char Ó
-                .byte	 $20, $50, $70, $88, $88, $88, $70, $00      ; code for char Ô
-                .byte	 $50, $A0, $70, $88, $88, $88, $70, $00      ; code for char Õ
-                .byte	 $88, $70, $88, $88, $88, $88, $70, $00      ; code for char Ö
-                .byte	 $00, $88, $50, $20, $50, $88, $00, $00      ; code for char ×
-                .byte	 $68, $90, $98, $A8, $C8, $48, $B0, $00      ; code for char Ø
-                .byte	 $40, $20, $88, $88, $88, $88, $70, $00      ; code for char Ù
-                .byte	 $10, $20, $88, $88, $88, $88, $70, $00      ; code for char Ú
-                .byte	 $20, $50, $00, $88, $88, $88, $70, $00      ; code for char Û
-                .byte	 $88, $00, $88, $88, $88, $88, $70, $00      ; code for char Ü
-                .byte	 $10, $20, $88, $50, $20, $20, $20, $00      ; code for char Ý
-                .byte	 $00, $40, $70, $48, $70, $40, $00, $00      ; code for char Þ
-                .byte	 $F0, $88, $88, $F0, $88, $88, $B0, $80      ; code for char ß
-                .byte	 $40, $20, $70, $08, $78, $88, $78, $00      ; code for char à
-                .byte	 $10, $20, $70, $08, $78, $88, $78, $00      ; code for char á
-                .byte	 $20, $50, $70, $08, $78, $88, $78, $00      ; code for char â
-                .byte	 $50, $A0, $70, $08, $78, $88, $78, $00      ; code for char ã
-                .byte	 $00, $88, $70, $08, $78, $88, $78, $00      ; code for char ä
-                .byte	 $30, $30, $70, $08, $78, $88, $78, $00      ; code for char å
-                .byte	 $00, $00, $F0, $28, $78, $A0, $78, $00      ; code for char æ
-                .byte	 $00, $00, $78, $80, $80, $78, $20, $30      ; code for char ç
-                .byte	 $40, $20, $70, $88, $F8, $80, $78, $00      ; code for char è
-                .byte	 $10, $20, $70, $88, $F8, $80, $78, $00      ; code for char é
-                .byte	 $20, $50, $70, $88, $F8, $80, $78, $00      ; code for char ê
-                .byte	 $00, $88, $70, $88, $F8, $80, $78, $00      ; code for char ë
-                .byte	 $40, $20, $00, $60, $20, $20, $70, $00      ; code for char ì
-                .byte	 $10, $20, $00, $60, $20, $20, $70, $00      ; code for char í
-                .byte	 $20, $50, $00, $60, $20, $20, $70, $00      ; code for char î
-                .byte	 $00, $50, $00, $60, $20, $20, $70, $00      ; code for char ï
-                .byte	 $28, $10, $28, $78, $88, $88, $70, $00      ; code for char ð
-                .byte	 $28, $50, $00, $F0, $88, $88, $88, $00      ; code for char ñ
-                .byte	 $40, $20, $00, $70, $88, $88, $70, $00      ; code for char ò
-                .byte	 $10, $20, $00, $70, $88, $88, $70, $00      ; code for char ó
-                .byte	 $20, $50, $00, $70, $88, $88, $70, $00      ; code for char ô
-                .byte	 $50, $A0, $00, $70, $88, $88, $70, $00      ; code for char õ
-                .byte	 $00, $88, $70, $88, $88, $88, $70, $00      ; code for char ö
-                .byte	 $00, $20, $00, $F8, $00, $20, $00, $00      ; code for char ÷
-                .byte	 $00, $00, $68, $90, $A8, $48, $B0, $00      ; code for char ø
-                .byte	 $40, $20, $00, $88, $88, $88, $78, $00      ; code for char ù
-                .byte	 $10, $20, $00, $88, $88, $88, $78, $00      ; code for char ú
-                .byte	 $20, $50, $00, $88, $88, $88, $78, $00      ; code for char û
-                .byte	 $00, $88, $00, $88, $88, $88, $78, $00      ; code for char ü
-                .byte	 $10, $20, $00, $88, $88, $78, $08, $70      ; code for char ý
-                .byte	 $80, $80, $F0, $88, $88, $F0, $80, $80      ; code for char þ
-                .byte	 $00, $88, $00, $88, $88, $78, $08, $70      ; code for char ÿ
+START           .byte	 $40, $20, $70, $88, $F8, $88, $88, $00      ; code for char  
+                .byte	 $10, $20, $70, $88, $F8, $88, $88, $00      ; code for char  
+                .byte	 $20, $50, $70, $88, $F8, $88, $88, $00      ; code for char  
+                .byte	 $50, $A0, $70, $88, $F8, $88, $88, $00      ; code for char  
+                .byte	 $88, $00, $70, $88, $F8, $88, $88, $00      ; code for char  
+                .byte	 $70, $50, $70, $88, $F8, $88, $88, $00      ; code for char  
+                .byte	 $78, $A0, $A0, $F8, $A0, $A0, $B8, $00      ; code for char  
+                .byte	 $70, $88, $80, $80, $88, $70, $20, $30      ; code for char  
+                .byte	 $40, $20, $F8, $80, $F0, $80, $F8, $00      ; code for char  
+                .byte	 $10, $20, $F8, $80, $F0, $80, $F8, $00      ; code for char  
+                .byte	 $20, $50, $F8, $80, $F0, $80, $F8, $00      ; code for char  
+                .byte	 $88, $00, $F8, $80, $F0, $80, $F8, $00      ; code for char  
+                .byte	 $40, $20, $70, $20, $20, $20, $70, $00      ; code for char  
+                .byte	 $10, $20, $70, $20, $20, $20, $70, $00      ; code for char  
+                .byte	 $20, $50, $70, $20, $20, $20, $70, $00      ; code for char  
+                .byte	 $50, $00, $70, $20, $20, $20, $70, $00      ; code for char  
+                .byte	 $70, $48, $48, $E8, $48, $48, $70, $00      ; code for char  
+                .byte	 $28, $50, $88, $C8, $A8, $98, $88, $00      ; code for char  
+                .byte	 $40, $20, $70, $88, $88, $88, $70, $00      ; code for char  
+                .byte	 $10, $20, $70, $88, $88, $88, $70, $00      ; code for char  
+                .byte	 $20, $50, $70, $88, $88, $88, $70, $00      ; code for char  
+                .byte	 $50, $A0, $70, $88, $88, $88, $70, $00      ; code for char  
+                .byte	 $88, $70, $88, $88, $88, $88, $70, $00      ; code for char  
+                .byte	 $00, $88, $50, $20, $50, $88, $00, $00      ; code for char  
+                .byte	 $68, $90, $98, $A8, $C8, $48, $B0, $00      ; code for char  
+                .byte	 $40, $20, $88, $88, $88, $88, $70, $00      ; code for char  
+                .byte	 $10, $20, $88, $88, $88, $88, $70, $00      ; code for char  
+                .byte	 $20, $50, $00, $88, $88, $88, $70, $00      ; code for char  
+                .byte	 $88, $00, $88, $88, $88, $88, $70, $00      ; code for char  
+                .byte	 $10, $20, $88, $50, $20, $20, $20, $00      ; code for char  
+                .byte	 $00, $40, $70, $48, $70, $40, $00, $00      ; code for char  
+                .byte	 $F0, $88, $88, $F0, $88, $88, $B0, $80      ; code for char  
+                .byte	 $40, $20, $70, $08, $78, $88, $78, $00      ; code for char  
+                .byte	 $10, $20, $70, $08, $78, $88, $78, $00      ; code for char  
+                .byte	 $20, $50, $70, $08, $78, $88, $78, $00      ; code for char  
+                .byte	 $50, $A0, $70, $08, $78, $88, $78, $00      ; code for char  
+                .byte	 $00, $88, $70, $08, $78, $88, $78, $00      ; code for char  
+                .byte	 $30, $30, $70, $08, $78, $88, $78, $00      ; code for char  
+                .byte	 $00, $00, $F0, $28, $78, $A0, $78, $00      ; code for char  
+                .byte	 $00, $00, $78, $80, $80, $78, $20, $30      ; code for char  
+                .byte	 $40, $20, $70, $88, $F8, $80, $78, $00      ; code for char  
+                .byte	 $10, $20, $70, $88, $F8, $80, $78, $00      ; code for char  
+                .byte	 $20, $50, $70, $88, $F8, $80, $78, $00      ; code for char  
+                .byte	 $00, $88, $70, $88, $F8, $80, $78, $00      ; code for char  
+                .byte	 $40, $20, $00, $60, $20, $20, $70, $00      ; code for char  
+                .byte	 $10, $20, $00, $60, $20, $20, $70, $00      ; code for char  
+                .byte	 $20, $50, $00, $60, $20, $20, $70, $00      ; code for char  
+                .byte	 $00, $50, $00, $60, $20, $20, $70, $00      ; code for char  
+                .byte	 $28, $10, $28, $78, $88, $88, $70, $00      ; code for char  
+                .byte	 $28, $50, $00, $F0, $88, $88, $88, $00      ; code for char  
+                .byte	 $40, $20, $00, $70, $88, $88, $70, $00      ; code for char  
+                .byte	 $10, $20, $00, $70, $88, $88, $70, $00      ; code for char  
+                .byte	 $20, $50, $00, $70, $88, $88, $70, $00      ; code for char  
+                .byte	 $50, $A0, $00, $70, $88, $88, $70, $00      ; code for char  
+                .byte	 $00, $88, $70, $88, $88, $88, $70, $00      ; code for char  
+                .byte	 $00, $20, $00, $F8, $00, $20, $00, $00      ; code for char  
+                .byte	 $00, $00, $68, $90, $A8, $48, $B0, $00      ; code for char  
+                .byte	 $40, $20, $00, $88, $88, $88, $78, $00      ; code for char  
+                .byte	 $10, $20, $00, $88, $88, $88, $78, $00      ; code for char  
+                .byte	 $20, $50, $00, $88, $88, $88, $78, $00      ; code for char  
+                .byte	 $00, $88, $00, $88, $88, $88, $78, $00      ; code for char  
+                .byte	 $10, $20, $00, $88, $88, $78, $08, $70      ; code for char  
+                .byte	 $80, $80, $F0, $88, $88, $F0, $80, $80      ; code for char  
+                .byte	 $00, $88, $00, $88, $88, $78, $08, $70      ; code for char  
 
 		.endl
 		

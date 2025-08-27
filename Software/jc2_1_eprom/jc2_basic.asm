@@ -1,7 +1,5 @@
 
-; Enhanced BASIC ver 2.28
-
-; $E7E1 $E7CF $E7C6 $E7D3 $E7D1 $E7D5 $E7CF $E81E $E825
+; Enhanced BASIC ver 2.30
 
 ; 2.00	new revision numbers start here
 ; 2.01	fixed LCASE$() and UCASE$()
@@ -34,6 +32,7 @@
 ;	  Bugfix MODE and NUML/NUMH no init. in LAB_LOAD.
 ; 2.29	- PORTIO, PORT() and PORT commands extended with extra VIA and MCP23017 ports from JC2 V4.1 and IO2 boards
 ;       - SOUND command added
+; 2.30  - ZP vars I2CStat, Decss, Decssp1 and Rbyte1..4 moved to other locations to free up ZP-space.
 ; ********************************************************************************************************
 
 ; changes by Joerg Walke
@@ -44,272 +43,7 @@
 ; 2024/02/03 Source adapted for MAD-Assembler
 ; ********************************************************************************************************
 
-; zero page use ..
-LAB_WARM		= $00			; BASIC warm start entry point
-Wrmjpl 			= LAB_WARM+1		; BASIC warm start vector jump low byte
-Wrmjph 			= LAB_WARM+2		; BASIC warm start vector jump high byte
-
-; *** moved from $DC-$E1 - J.Walke 2022/07/29 *****************************
-NmiBase			= $03			; NMI handler enabled/setup/triggered flags
-						; bit	function
-						; ===	========
-						; 7	interrupt enabled
-						; 6	interrupt setup
-						; 5	interrupt happened
-
-;			= $04		; NMI handler addr low byte
-;			= $05		; NMI handler addr high byte
-IrqBase			= $06		; IRQ handler enabled/setup/triggered flags
-;			= $07		; IRQ handler addr low byte
-;			= $08		; IRQ handler addr high byte
-
-; *************************************************************************
-
-Usrjmp			= $0A		; USR function JMP address
-Usrjpl			= Usrjmp+1	; USR function JMP vector low byte
-Usrjph			= Usrjmp+2	; USR function JMP vector high byte
-Nullct			= $0D		; nulls output after each line
-TPos			= $0E		; BASIC terminal position byte
-TWidth			= $0F		; BASIC terminal width byte
-Iclim			= $10		; input column limit
-Itempl			= $11		; temporary integer low byte
-Itemph			= Itempl+1	; temporary integer high byte
-
-nums_1			= Itempl	; number to bin/hex string convert MSB
-nums_2			= nums_1+1	; number to bin/hex string convert
-nums_3			= nums_1+2	; number to bin/hex string convert LSB
-
-; *** free space **********************************************************
-;			= $14		; *used by JC2 system
-;			= $15		; *used by JC2 system
-;			= $16		; *used by JC2 system
-;			= $17		; *used by JC2 system
-;			= $18		; *used by JC2 system
-;			= $19		; *used by JC2 system 
-; *************************************************************************
-
-Temp1			= $1A		; temporary byte for free use
-
-Srchc			= $1B		; search character
-Temp3			= Srchc		; temp byte used in number routines
-Scnquo			= $1C		; scan-between-quotes flag
-Asrch			= Scnquo	; alt search character
-
-XOAw_l			= Srchc		; eXclusive OR, OR and AND word low byte
-XOAw_h			= Scnquo	; eXclusive OR, OR and AND word high byte
-
-Ibptr			= $1D		; input buffer pointer
-Dimcnt			= Ibptr		; # of dimensions
-Tindx			= Ibptr		; token index
-
-Defdim			= $1E		; default DIM flag
-Dtypef			= $1F		; data type flag, $FF=string, $00=numeric
-Oquote			= $20		; open quote flag (b7) (Flag: DATA scan; LIST quote; memory)
-Gclctd			= $20		; garbage collected flag
-Sufnxf			= $21		; subscript/FNX flag, 1xxx xxx = FN(0xxx xxx)
-Imode			= $22		; input mode flag, $00=INPUT, $80=READ
-
-Cflag			= $23		; comparison evaluation flag
-
-TabSiz			= $24		; TAB step size (was input flag)
-
-next_s			= $25		; next descriptor stack address
-
-					; these two bytes form a word pointer to the item
-					; currently on top of the descriptor stack
-
-last_sl			= $26		; last descriptor stack address low byte
-last_sh			= $27		; last descriptor stack address high byte (always $00)
-
-des_sk			= $28		; descriptor stack start address (temp strings)
-
-;			= $30		; End of descriptor stack
-
-ut1_pl			= $31		; utility pointer 1 low byte
-ut1_ph			= ut1_pl+1	; utility pointer 1 high byte
-ut2_pl			= $33		; utility pointer 2 low byte
-ut2_ph			= ut2_pl+1	; utility pointer 2 high byte
-
-Temp_2			= ut1_pl	; temp byte for block move	
-
-FACt_1			= $35		; FAC temp mantissa1
-FACt_2			= FACt_1+1	; FAC temp mantissa2
-FACt_3			= FACt_2+1	; FAC temp mantissa3
-
-dims_l			= FACt_2	; array dimension size low byte
-dims_h			= FACt_3	; array dimension size high byte
-
-TempB			= $38		; temp page 0 byte
-
-Smeml			= $39		; start of mem low byte		(Start-of-Basic)
-Smemh			= Smeml+1	; start of mem high byte	(Start-of-Basic)
-Svarl			= $3B		; start of vars low byte	(Start-of-Variables)
-Svarh			= Svarl+1	; start of vars high byte	(Start-of-Variables)
-Sarryl			= $3D		; var mem end low byte		(Start-of-Arrays)
-Sarryh			= Sarryl+1	; var mem end high byte		(Start-of-Arrays)
-Earryl			= $3F		; array mem end low byte	(End-of-Arrays)
-Earryh			= Earryl+1	; array mem end high byte	(End-of-Arrays)
-Sstorl			= $41		; string storage low byte	(String storage (moving down))
-Sstorh			= Sstorl+1	; string storage high byte	(String storage (moving down))
-Sutill			= $43		; string utility ptr low byte
-Sutilh			= Sutill+1	; string utility ptr high byte
-Ememl			= $45		; end of mem low byte		(Limit-of-memory)
-Ememh			= Ememl+1	; end of mem high byte		(Limit-of-memory)
-Clinel			= $47		; current line low byte		(Basic line number)
-Clineh			= Clinel+1	; current line high byte	(Basic line number)
-Blinel			= $49		; break line low byte		(Previous Basic line number)
-Blineh			= Blinel+1	; break line high byte		(Previous Basic line number)
-
-Cpntrl			= $4B		; continue pointer low byte
-Cpntrh			= Cpntrl+1	; continue pointer high byte
-
-Dlinel			= $4D		; current DATA line low byte
-Dlineh			= Dlinel+1	; current DATA line high byte
-
-Dptrl			= $4F		; DATA pointer low byte
-Dptrh			= Dptrl+1	; DATA pointer high byte
-
-Rdptrl			= $51		; read pointer low byte
-Rdptrh			= Rdptrl+1	; read pointer high byte
-
-Varnm1			= $53		; current var name 1st byte
-Varnm2			= Varnm1+1	; current var name 2nd byte
-
-Cvaral			= $55		; current var address low byte
-Cvarah			= Cvaral+1	; current var address high byte
-
-Frnxtl			= $57		; var pointer for FOR/NEXT low byte
-Frnxth			= Frnxtl+1	; var pointer for FOR/NEXT high byte
-
-Tidx1			= Frnxtl	; temp line index
-
-Lvarpl			= Frnxtl	; let var pointer low byte
-Lvarph			= Frnxth	; let var pointer high byte
-
-prstk			= $59		; precedence stacked flag
-
-comp_f			= $5B		; compare function flag, bits 0,1 and 2 used
-					; bit 2 set if >
-					; bit 1 set if =
-					; bit 0 set if <
-
-func_l			= $5C		; function pointer low byte
-func_h			= func_l+1	; function pointer high byte
-
-garb_l			= func_l	; garbage collection working pointer low byte
-garb_h			= func_h	; garbage collection working pointer high byte
-
-des_2l			= $5E		; string descriptor_2 pointer low byte
-des_2h			= des_2l+1	; string descriptor_2 pointer high byte
-
-g_step			= $60		; garbage collect step size
-
-Fnxjmp			= $61		; jump vector for functions
-Fnxjpl			= Fnxjmp+1	; functions jump vector low byte
-Fnxjph			= Fnxjmp+2	; functions jump vector high byte
-
-g_indx			= Fnxjpl	; garbage collect temp index
-	
-FAC2_r			= $63		; FAC2 rounding byte
-
-Adatal			= $64		; array data pointer low byte
-Adatah			= Adatal+1	; array data pointer high  byte
-
-Nbendl			= Adatal	; new block end pointer low byte
-Nbendh			= Adatah	; new block end pointer high  byte
-
-Obendl			= $66		; old block end pointer low byte
-Obendh			= Obendl+1	; old block end pointer high  byte
-
-numexp			= $68		; string to float number exponent count
-expcnt			= $69		; string to float exponent count
-
-numbit			= numexp	; bit count for array element calculations
-
-numdpf			= $6A		; string to float decimal point flag
-expneg			= $6B		; string to float eval exponent -ve flag
-
-Astrtl			= numdpf	; array start pointer low byte
-Astrth			= expneg	; array start pointer high  byte
-
-Histrl			= numdpf	; highest string low byte
-Histrh			= expneg	; highest string high  byte
-
-Baslnl			= numdpf	; BASIC search line pointer low byte
-Baslnh			= expneg	; BASIC search line pointer high  byte
-
-Fvar_l			= numdpf	; find/found variable pointer low byte
-Fvar_h			= expneg	; find/found variable pointer high  byte
-
-Ostrtl			= numdpf	; old block start pointer low byte
-Ostrth			= expneg	; old block start pointer high  byte
-
-Vrschl			= numdpf	; variable search pointer low byte
-Vrschh			= expneg	; variable search pointer high  byte
-
-FAC1_e			= $6C		; FAC1 exponent
-FAC1_1			= FAC1_e+1	; FAC1 mantissa1
-FAC1_2			= FAC1_e+2	; FAC1 mantissa2
-FAC1_3			= FAC1_e+3	; FAC1 mantissa3
-FAC1_s			= FAC1_e+4	; FAC1 sign (b7)
-
-str_ln			= FAC1_e	; string length
-str_pl			= FAC1_1	; string pointer low byte
-str_ph			= FAC1_2	; string pointer high byte
-
-des_pl			= FAC1_2	; string descriptor pointer low byte
-des_ph			= FAC1_3	; string descriptor pointer high byte
-
-mids_l			= FAC1_3	; MID$ string temp length byte
-
-negnum			= $71		; string to float eval -ve flag
-numcon			= $71		; series evaluation constant count
-
-FAC1_o			= $72		; FAC1 overflow byte
-
-FAC2_e			= $73		; FAC2 exponent
-FAC2_1			= FAC2_e+1	; FAC2 mantissa1
-FAC2_2			= FAC2_e+2	; FAC2 mantissa2
-FAC2_3			= FAC2_e+3	; FAC2 mantissa3
-FAC2_s			= FAC2_e+4	; FAC2 sign (b7)
-
-FAC_sc			= $78		; FAC sign comparison, Acc#1 vs #2
-FAC1_r			= $79		; FAC1 rounding byte
-
-ssptr_l			= FAC_sc	; string start pointer low byte
-ssptr_h			= FAC1_r	; string start pointer high byte
-
-sdescr			= FAC_sc	; string descriptor pointer
-
-csidx			= $7A		; line crunch save index
-Asptl			= csidx		; array size/pointer low byte
-Aspth			= $7B		; array size/pointer high byte
-
-Btmpl			= Asptl		; BASIC pointer temp low byte
-Btmph			= Aspth		; BASIC pointer temp low byte
-
-Cptrl			= Asptl		; BASIC pointer temp low byte
-Cptrh			= Aspth		; BASIC pointer temp low byte
-
-Sendl			= Asptl		; BASIC pointer temp low byte
-Sendh			= Aspth		; BASIC pointer temp low byte
-
-LAB_IGBY		= $7C		; get next BASIC byte subroutine
-
-LAB_GBYT		= $82		; get current BASIC byte subroutine
-Bpntrl			= $83		; BASIC execute (get byte) pointer low byte
-Bpntrh			= Bpntrl+1	; BASIC execute (get byte) pointer high byte
-
-;			= $97		; end of get BASIC char subroutine
-
-Rbyte4			= $98		; extra PRNG byte
-Rbyte1			= Rbyte4+1	; most significant PRNG byte
-Rbyte2			= Rbyte4+2	; middle PRNG byte
-Rbyte3			= Rbyte4+3	; least significant PRNG byte
-
-I2Cstat			= $9C		; BASIC I2C read byte or ACK/NACK bit
-Decss			= $9D		; BASIC number to decimal string start LSB (moved from $EF)
-Decssp1			= $9E		; BASIC number to decimal string start MSB (moved from $F0)
+; BASIC ZP variables moved to jc2_basic_zp_vars.inc
 
 ; token values needed for BASIC
 
@@ -476,13 +210,12 @@ I2C_RD_NAK	= 2			; I2Cin Read + NACK + Stop
 I2C_STO		= 3			; I2Cin Stop only
 
 ; BASIC cold start entry point
-; new page 2 initialisation, copy block to ccflag on
+; new page $18 initialisation, copy block to ccflag on
 LAB_COLD
-	LDY	#PG2_TABE-PG2_TABS-1
-						; byte count-1
+	LDY	#PG2_TABE-PG2_TABS-1		; byte count-1
 LAB_2D13
 	LDA	PG2_TABS,Y			; get byte
-	STA	ccflag,Y			; store in page 2
+	STA	ccflag,Y			; store in $1800 RAM area
 	DEY					; decrement count
 	BPL	LAB_2D13			; loop if not done
 
@@ -493,7 +226,7 @@ LAB_2D13
 	LDA	#$4C				; code for JMP
 	STA	Fnxjmp				; save for jump vector for functions
 
-; copy block from LAB_2CEE to $00BC - $00D3
+; copy block from LAB_2CEE to ZP $007C - $0097
 	LDX	#StrTab-LAB_2CEE		; set byte count
 LAB_2D4E
 	LDA	LAB_2CEE-1,X			; get byte from table
@@ -501,20 +234,17 @@ LAB_2D4E
 	DEX					; decrement count
 	BNE	LAB_2D4E			; loop if not all done
 
-; copy block from StrTab to $0000 - $0012
+; copy block from StrTab to ZP $0A - $12
 LAB_GMEM
-	LDX	#EndTab-StrTab-1; set byte count-1
+	LDX	#EndTab-StrTab-1			; set byte count-1
 TabLoop
 	LDA	StrTab,X			; get byte from table
-	STA	PLUS_0,X			; save byte in page zero
+	STA	Usrjmp,X			; save byte in page zero
 	DEX					; decrement count
 	BPL	TabLoop				; loop if not all done
 
 ; set-up start values
-
 	LDA	#$00				; clear A
-	STA	NmiBase				; clear NMI handler enabled flag
-	STA	IrqBase				; clear IRQ handler enabled flag
 	STA	FAC1_o				; clear FAC1 overflow byte
 	STA	last_sh				; clear descriptor stack top item pointer high byte
 
@@ -802,10 +532,6 @@ LAB_1269
 ; BASIC warm start entry point
 ; wait for Basic command
 LAB_1274
-						; clear ON IRQ/NMI bytes
-	LDA	#$00				; clear A
-	STA	IrqBase				; clear enabled byte
-	STA	NmiBase				; clear enabled byte
 	LDA	#<LAB_RMSG			; point to 'Ready' message low byte
 	LDY	#>LAB_RMSG			; point to 'Ready' message high byte
 
@@ -6588,8 +6314,8 @@ LAB_RND
 	BEQ	NextPRN			; do next random # if zero
 
 					; else get seed into random number store
-	LDX	#Rbyte4			; set PRNG pointer low byte
-	LDY	#$00			; set PRNG pointer high byte
+	LDX	#<Rbyte4		; set PRNG pointer low byte
+	LDY	#>Rbyte4		; set PRNG pointer high byte
 	JSR	LAB_2778		; pack FAC1 into (XY)
 NextPRN
 	LDX	#$AF			; set EOR byte
@@ -6985,7 +6711,7 @@ LAB_EXCH
 ; now also the code that checks to see if an interrupt has occurred
 CTRLC
 	LDA	ccflag			; get [CTRL-C] check flag
-	BNE	LAB_FBA2		; exit if inhibited
+	BNE	LAB_CRTS		; exit if inhibited
 
 	JSR	V_INPT			; scan input device
 	BCC	LAB_FBA0		; exit if buffer empty
@@ -6997,58 +6723,13 @@ CTRLC
 
 LAB_FBA0
 	LDX	ccnull			; get countdown byte
-	BEQ	LAB_FBA2		; exit if finished
+	BEQ	LAB_CRTS		; exit if finished
 
 	DEC	ccnull			; else decrement countdown
-LAB_FBA2
-	LDX	#NmiBase		; set pointer to NMI values
-	JSR	LAB_CKIN		; go check interrupt
-	LDX	#IrqBase		; set pointer to IRQ values
-	JSR	LAB_CKIN		; go check interrupt
 LAB_CRTS
 	RTS
 
-; check whichever interrupt is indexed by X
-LAB_CKIN
-	LDA	PLUS_0,X		; get interrupt flag byte
-	BPL	LAB_CRTS		; branch if interrupt not enabled
-
-; we disable the interrupt here and make two new commands RETIRQ and RETNMI to
-; automatically enable the interrupt when we exit
-	ASL				; move happened bit to setup bit
-	AND	#$40			; mask happened bits
-	BEQ	LAB_CRTS		; if no interrupt then exit
-
-	STA	PLUS_0,X		; save interrupt flag byte
-
-	TXA				; copy index ..
-	TAY				; .. to Y
-
-	PLA				; dump return address low byte, call from CTRL-C
-	PLA				; dump return address high byte
-
-	LDA	#$05			; need 5 bytes for GOSUB
-	JSR	LAB_1212		; check room on stack for A bytes
-	LDA	Bpntrh			; get BASIC execute pointer high byte
-	PHA				; push on stack
-	LDA	Bpntrl			; get BASIC execute pointer low byte
-	PHA				; push on stack
-	LDA	Clineh			; get current line high byte
-	PHA				; push on stack
-	LDA	Clinel			; get current line low byte
-	PHA				; push on stack
-	LDA	#TK_GOSUB		; token for GOSUB
-	PHA				; push on stack
-
-	LDA	PLUS_1,Y		; get interrupt code pointer low byte
-	STA	Bpntrl			; save as BASIC execute pointer low byte
-	LDA	PLUS_2,Y		; get interrupt code pointer high byte
-	STA	Bpntrh			; save as BASIC execute pointer high byte
-
-	JMP	LAB_15C2		; go do interpreter inner loop
-					; can't RTS, we used the stack! the RTS from the ctrl-c
-					; check will be taken when the RETIRQ/RETNMI/RETURN is
-					; executed at the end of the subroutine
+; 02-08-'25 Emile removed: check whichever interrupt is indexed by X
 
 ; get byte from input device, no waiting
 ; returns with carry set if byte in A
@@ -7929,7 +7610,6 @@ LAB_RES6
 
 ; **** end of new commands ****
 
-
 ; system dependent i/o vectors
 ; these are in RAM and are set by the monitor at start-up
 
@@ -7937,7 +7617,6 @@ V_INPT	JMP	(STDIN)			; non halting scan input device vector (Junior Computer 2)
 V_OUTP	JMP	(STDOUT)		; send byte to output device vector (Junior Computer 2)
 
 ; The rest are tables messages and code for RAM
-
 ; the rest of the code is tables and BASIC start-up code
 
 PG2_TABS
@@ -7945,10 +7624,6 @@ PG2_TABS
 	.byte	$00			; ctrl-c byte		-	GET needs this
 	.byte	$00			; ctrl-c byte timeout	-	GET needs this
 	.word	CTRLC			; ctrl c check vector
-;	.word	xxxx			; non halting key input	-	monitor to set this
-;	.word	xxxx			; output vector		-	monitor to set this
-;	.word	xxxx			; load vector		-	monitor to set this
-;	.word	xxxx			; save vector		-	monitor to set this
 PG2_TABE
 
 ; character get subroutine for zero page
@@ -7992,32 +7667,22 @@ LAB_2CF4
 LAB_2D05
 	RTS
 
-; page zero initialisation table $00-$12 inclusive
+; page zero initialisation table $0A-$12 (9 bytes) inclusive
 StrTab
-	.byte	$4C			; JMP opcode
-	.word 	LAB_COLD		; initial warm start vector (cold start)
-
-	.byte	$00			; these bytes are not used by BASIC
-	.word	$0000			; 
-	.word	$0000			; 
-	.word	$0000			; 
-
-	.byte	$4C			; JMP opcode
-	.word	LAB_FCER		; initial user function vector ('Function call' error)
-	.byte	$00			; default NULL count
-	.byte	$00			; clear terminal position
-	.byte	$00			; default terminal width byte
-	.byte	$F2			; default limit for TAB = 14
-	.word	Ram_base		; start of user RAM
+	.byte	$4C			; Usrjmp, JMP opcode
+	.word	LAB_FCER		; Usrjpl/h, initial user function vector ('Function call' error)
+	.byte	$00			; Nullct, default NULL count
+	.byte	$00			; Tpos, clear terminal position
+	.byte	$00			; Twidth, default terminal width byte
+	.byte	$F2			; Iclim, default limit for TAB = 14
+	.word	Ram_base		; Itempl/h, Start of user RAM
 EndTab
 
 LAB_MSZM
-	.by	'Enhanced BASIC 2.29',$0A,$00
-;	.byte	$0D,$0A,'Memory size ',$00
+	.by	'Enhanced BASIC 2.30',$0A,$00
 
 LAB_SMSG
 	.by	' Basic Bytes free',$0D,$0A,$0A,$00
-;	.byte	'Enhanced BASIC 2.25',$0A,$00
 
 ; numeric constants and series
 
