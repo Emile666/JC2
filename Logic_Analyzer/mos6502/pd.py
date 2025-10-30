@@ -118,7 +118,9 @@ class Decoder(srd.Decoder):
         self.samplenum_phi2_f = 0 # samplenr of PHI2 falling edge
         self.samplenum_phi2_r = 0 # samplenr of PHI2 rising edge
         self.samplenum_dasm_start = 0 # samplenr at start of disassembly
-        
+        self.bus_data = 0 # contents of databus
+        self.bus_addr = 0 # contents of addressbus
+
     def start(self):
         self.out_ann    = self.register(srd.OUTPUT_ANN)
         self.ann_data   = None
@@ -129,17 +131,20 @@ class Decoder(srd.Decoder):
         cycle_pr = cycle # cycle to Print
         op = '???'
         len = 0
-        samplenum_datab = 0 # samplenumber at start of databyte print
-        samplenum_datae = 0 # samplenumber at end   of databyte print
-        rnw_phi2_r      = 0 # RNW line at rising edge of PHI2
-        
+        samplenum_datab = 0  # samplenumber at start of databyte print
+        samplenum_datae = 0  # samplenumber at end   of databyte print
+        rnw_phi2_r      = 0  # RNW line at rising edge of PHI2
+        self.bus_data   = 0  # contents of databus
+        self.bus_addr   = 0  # contents of addressbus
+        phi2r = 0            # 1 = PHI2 rising edge detected
+        self.prev_phi2  = 0  # Previous value of PHI2
+        branch_addr     = 0  # Address-bus value during fetch
+
         while True:
             pins = self.wait()
-
-            bus_data = reduce_bus(pins[Pin.D0:Pin.D7+1])  # databus as byte
-            bus_addr = reduce_bus(pins[Pin.A0:Pin.A15+1]) # addressbus as word
-
             phi2f = 0  # 1 = PHI2 falling edge detected
+            if pins[Pin.PHI2] == 1 and phi2r == 1: # Previous sample detected a PHI2 rising edge, read databus in sample following rising-edge
+                self.bus_data = reduce_bus(pins[Pin.D0:Pin.D7+1])  # databus as byte, valid if PHI2 is high. Do not read at PHI2 falling-edge, since clock might be shifted.
             phi2r = 0  # 1 = PHI2 rising edge detected
             if pins[Pin.PHI2] == 1:
                 if self.prev_phi2 == 0:
@@ -147,13 +152,14 @@ class Decoder(srd.Decoder):
                     self.samplenum_phi2_r = self.samplenum
                     rnw_phi2_r = pins[Pin.RNW] # RNW line at rising-edge of PHI2
                     # Print addressbus from PHI2 falling-edge to rising-edge
-                    self.put(self.samplenum_phi2_f, self.samplenum, self.out_ann, [Ann.ADDR, [format(bus_addr, '04X')]])
+                    self.put(self.samplenum_phi2_f, self.samplenum, self.out_ann, [Ann.ADDR, [format(self.bus_addr, '04X')]])
             else: # PHI2 == 0
+                self.bus_addr = reduce_bus(pins[Pin.A0:Pin.A15+1]) # addressbus as word, valid if PHI2 is low
                 if self.prev_phi2 == 1: 
                     phi2f = 1 # PHI2 falling edge detected
                     self.samplenum_phi2_f = self.samplenum
                     # Print databus from PHI2 rising-edge to falling-edge
-                    self.put(self.samplenum_phi2_r, self.samplenum, self.out_ann, [Ann.DATA, [format(bus_data, '02X')]])
+                    self.put(self.samplenum_phi2_r, self.samplenum, self.out_ann, [Ann.DATA, [format(self.bus_data, '02X')]])
                     samplenum_datab = self.samplenum_phi2_r # needed for printing cycle-type
                     samplenum_datae = self.samplenum
                     if cycle == Cycle.DATA: # determine if the DATA cycle is READ or WRITE
@@ -184,13 +190,14 @@ class Decoder(srd.Decoder):
                 op1     = 0                                # value of 1st databyte
                 op2     = 0                                # value of 2nd databyte (MSB)
                 self.samplenum_dasm_start = self.samplenum # start disassembly text from this samplenumber
-
+                branch_addr = self.bus_addr + 2            # address-bus value for branch instructions
+                
             elif phi2f == 1: # from now on, read all data at falling-edge of PHI2
                 # ------------------------------------------------------------------------------------------------------------
                 # Read databyte op1 following the Fetch opcode byte, PHI2 falling edge is end of data-read
                 # ------------------------------------------------------------------------------------------------------------
                 if cycle == Cycle.FETCH:
-                    instr   = instr_table[bus_data]            # read instruction record
+                    instr   = instr_table[self.bus_data]       # read instruction record
                     op      = instr[0]                         # instruction mnemonic text
                     mode    = instr[1]                         # instruction addressing mode
                     len     = addr_mode_len_map[mode]          # instruction number of bytes [1,2,3]
@@ -211,16 +218,16 @@ class Decoder(srd.Decoder):
                 # ------------------------------------------------------------------------------------------------------------
                 elif cycle == Cycle.OP1:
                     if mode == AddrMode.BRA: 
-                        op1 = signed_byte(bus_data)
+                        op1 = signed_byte(self.bus_data)
                     else: 
-                        op1 = bus_data
+                        op1 = self.bus_data
                     if opcount > 0: # 3-byte instruction
                         cycle = Cycle.OP2
                         opcount -= 1
                     else: # 2-byte instruction
                         cycle = Cycle.DATA # next cycle is a data-byte cycle
                         if mode == AddrMode.BRA:
-                            self.put(self.samplenum_dasm_start, self.samplenum, self.out_ann, [Ann.INSTR, [op.format(op1+bus_addr)]])
+                            self.put(self.samplenum_dasm_start, self.samplenum, self.out_ann, [Ann.INSTR, [op.format(op1+branch_addr)]])
                         else:
                             self.put(self.samplenum_dasm_start, self.samplenum, self.out_ann, [Ann.INSTR, [op.format(op1)]])
             
@@ -230,7 +237,7 @@ class Decoder(srd.Decoder):
                 # instructions, this disassembly print is overwritten by the disassembly print at the rising edge of SYNC.
                 # ------------------------------------------------------------------------------------------------------------
                 elif cycle == Cycle.OP2:
-                    op2 = bus_data     # read databyte
+                    op2 = self.bus_data # read databyte
                     cycle = Cycle.DATA # next cycle is a data-byte cycle
                     self.put(self.samplenum_dasm_start, self.samplenum, self.out_ann, [Ann.INSTR, [op.format(op1 + 256*op2)]])
                 
@@ -243,11 +250,16 @@ class Decoder(srd.Decoder):
                         self.put(self.samplenum_dasm_start, self.samplenum, self.out_ann, [Ann.INSTR, [op]])
                     elif len == 2: # 2-byte instructions 
                         if mode == AddrMode.BRA: # branch instructions with relative addressing
-                            self.put(self.samplenum_dasm_start, self.samplenum, self.out_ann, [Ann.INSTR, [op.format(op1+bus_addr)]])
+                            self.put(self.samplenum_dasm_start, self.samplenum, self.out_ann, [Ann.INSTR, [op.format(op1+branch_addr)]])
                         else:      # all other 2-byte instructions
                             self.put(self.samplenum_dasm_start, self.samplenum, self.out_ann, [Ann.INSTR, [op.format(op1)]])
                     elif len == 3: # 3-byte instructions
-                        self.put(self.samplenum_dasm_start, self.samplenum, self.out_ann, [Ann.INSTR, [op.format(op1 + 256*op2)]])
+                        if op[:3] == 'JSR':
+                            self.put(self.samplenum_dasm_start, self.samplenum, self.out_ann, [Ann.INSTR, [op.format(op1 + 256*self.bus_data)]])
+                        else:
+                            self.put(self.samplenum_dasm_start, self.samplenum, self.out_ann, [Ann.INSTR, [op.format(op1 + 256*op2)]])
+                        # All 3-byte instructions (ABS, ABSX, ABSY, IND16) have the 16-bit value in Op1 and Op2, except for the
+                        # JSR instruction, where Op1 contains the LSB and the last byte (byte 6) contains the MSB.
 
                 # ------------------------------------------------------------------------------------------------------------
                 # Following a Fetch, OP1 or OP2 cycle, one or more byte read/write cycles may follow. They are identified here,
